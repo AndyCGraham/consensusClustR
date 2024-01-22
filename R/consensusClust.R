@@ -15,9 +15,9 @@
 #' @param subsetGenes boolean array of same length as rownames(data), specifying which genes should be used for clustering, 
 #' e.g. highly variable genes.
 #' 
-#' @return list: list containing \n
-#' 'assignments': character vector of consensus clustering assignments \n
-#' 'res': the clustering resolution which produced these optimal assignments \n
+#' @return list containing:
+#' 'assignments': character vector of consensus clustering assignments;
+#' 'res': the clustering resolution which produced these optimal assignments; and,
 #' 'dendrogram': dendrogram showing the relatedness of output cluster assignments, based on the co-clustering distance matrix
 #' @export
 #' 
@@ -32,7 +32,7 @@
 #' 
 #' @examples
 #' #
-#' data = matrix(rnorm(36),nrow=3000, ncol=1000)
+#' data = matrix(rnorm(30000),nrow=3000, ncol=1000)
 #' #Using default settings and 5 PCs:
 #' results <- consensusClust(data, pcNum = 5)
 #' 
@@ -71,9 +71,9 @@ consensusClust <- function(data, pcNum=15, nboots=200, clusterFun="leiden", boot
               all((threads%%1==0) & (threads > 0)))
   
   
-  if(class(data)=="Seurat"){
+  if(class(data)[1]=="Seurat"){
     data = data[[assay]]$scale.data
-  } else if(class(data)=="SingleCellExperiment"){
+  } else if(class(data)[1]=="SingleCellExperiment"){
     data = assay(Multiome.sce, assay)
   }
   
