@@ -18,5 +18,5 @@ Imports:
     cluster (>= 2.1.6),
     RcppXPtrUtils (>= 0.1.2),
     parallelDist (>= 0.2.6),
-    SummarizedExperiment (>= 1.32.0),
+    SummarizedExperiment (>= 1.30.0),
     irlba (>= 2.3.5.1)
