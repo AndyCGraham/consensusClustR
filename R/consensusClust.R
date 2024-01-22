@@ -1,19 +1,24 @@
 #' Perform consensus clustering on a scRNA-seq matrix
 #'
-#' @param data matrix of scaled counts, or a Seurat or SingleCellExperiment object from which these can be extracted
-#' @param pcNum number of principal components to consider when finding nearest neighbours
-#' @param nboots number of boostraps to perform
-#' @param clusterFun Which of the igraph community detection algorithms to use for clustering: "leiden" or "louvain"
-#' @param bootSize fraction of total cell number to use per bootstrap
-#' @param resRange Numeric vector of resolutions to cluster over
-#' @param pcaMethod Method for computing pca (specify irbla for faster, less accurate PCA)
-#' @param kNum number of nearest neighbours for knn graph construction
+#' @param data matrix of scaled counts, or a Seurat or SingleCellExperiment object from which these can be extracted.
+#' @param pcNum number of principal components to consider when finding nearest neighbours.
+#' @param nboots number of boostraps to perform.
+#' @param clusterFun Which of the igraph community detection algorithms to use for clustering: "leiden" or "louvain".
+#' @param bootSize fraction of total cell number to use per bootstrap.
+#' @param resRange Numeric vector of resolutions to cluster over.
+#' @param pcaMethod Method for computing pca (specify irbla for faster, less accurate PCA).
+#' @param kNum number of nearest neighbours for knn graph construction.
 #' @param mode How to deal with cluster assignments from different resolutions, either pick the one with highest silhouette score ('robust')
-#' or use all when deciding consensus clusters ('granular')
-#' @param threads How many cpus to use in parallel
-#' @param assay Name of seurat or SingleCellExperiment assay, if providing an object rather than scaled counts
+#' or use all when deciding consensus clusters ('granular').
+#' @param threads How many cpus to use in parallel.
+#' @param assay Name of seurat or SingleCellExperiment assay, if providing an object rather than scaled counts.
+#' @param subsetGenes boolean array of same length as rownames(data), specifying which genes should be used for clustering, 
+#' e.g. highly variable genes.
 #' 
-#' @return vector: character vector of consensus clustering assignments
+#' @return list: list containing
+#' 'assignments': character vector of consensus clustering assignments
+#' 'res': the clustering resolution which produced these optimal assignments
+#' 'dendrogram': dendrogram showing the relatedness of output cluster assignments, based on the co-clustering distance matrix
 #' @export
 #' 
 #' @importFrom bluster neighborsToSNNGraph
@@ -25,8 +30,19 @@
 #' @importFrom parallelDist parDist
 #' @importFrom SummarizedExperiment assay
 #' 
+#' @examples
+#' Using default settings and 5 PCs:
+#' results <- consensusClust(data, pcNum = 5)
+#' 
+#' Using 5 PCs, 1000 bootstraps, more fine resolutions, and 15 cpus:
+#' results <- consensusClust(data, pcNum = 5, nboots=1000, resRange = seq.int(0.1, 1, by = 0.025), threads = 15)
+#' 
+#' Using 5 PCs, and provinding a SingleCellExperiment experiment object 'data' with scaled features in the "logcounts" 
+#' assay, and a boolean array specifying whether genes are highly variable in the 'varaible' column of rowData(data):
+#' results <- consensusClust(data, pcNum = 5, assay = "logcounts", subsetGenes = rowData(data)$variable)
+#' 
 consensusClust <- function(data, pcNum=15, nboots=200, clusterFun="leiden", bootSize=0.8, resRange = seq.int(0.05, 1, by = 0.05),  
-                            pcaMethod = "irbla", kNum=30, mode = "robust", threads=1, assay="RNA", ...) {
+                            pcaMethod = "irbla", kNum=30, mode = "robust", threads=1, assay="RNA", subsetGenes=NULL, ...) {
   
   #Check input is correct
   stopifnot("`data` must be a matrix, sparse matrix of type dgCMatrix, seurat object, or single-cell experiment object." = 
@@ -48,11 +64,21 @@ consensusClust <- function(data, pcNum=15, nboots=200, clusterFun="leiden", boot
               all((kNum%%1==0) & (kNum > 0)))
   stopifnot("`mode` must be either 'robust' or 'granular'." = 
               mode %in% c("robust", "granular") )
+  stopifnot("`threads` must be a positive integer." = 
+              all((threads%%1==0) & (threads > 0)))
+  
   
   if(class(data)=="Seurat"){
     data = data[[assay]]$scale.data
   } else if(class(data)=="SingleCellExperiment"){
-    data = assay(sce, assay)
+    data = assay(Multiome.sce, assay)
+  }
+  
+  #Subset data matrix to certain genes if subsetGenes is used
+  if(!is.null(subsetGenes)){
+    stopifnot("`subsetGenes` must be a boolean array of same length as rownames(data)." = 
+                all((class(subsetGenes)) & (length(subsetGenes) == length(rownames(data)))))
+    data = data[subsetGenes,]
   }
   
   #Get cluster assignments for bootstrapped selections of cells

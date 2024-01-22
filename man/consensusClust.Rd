@@ -16,36 +16,55 @@ consensusClust(
   mode = "robust",
   threads = 1,
   assay = "RNA",
+  subsetGenes = NULL,
   ...
 )
 }
 \arguments{
-\item{data}{matrix of scaled counts, or a Seurat or SingleCellExperiment object from which these can be extracted}
+\item{data}{matrix of scaled counts, or a Seurat or SingleCellExperiment object from which these can be extracted.}
 
-\item{pcNum}{number of principal components to consider when finding nearest neighbours}
+\item{pcNum}{number of principal components to consider when finding nearest neighbours.}
 
-\item{nboots}{number of boostraps to perform}
+\item{nboots}{number of boostraps to perform.}
 
-\item{clusterFun}{Which of the igraph community detection algorithms to use for clustering: "leiden" or "louvain"}
+\item{clusterFun}{Which of the igraph community detection algorithms to use for clustering: "leiden" or "louvain".}
 
-\item{bootSize}{fraction of total cell number to use per bootstrap}
+\item{bootSize}{fraction of total cell number to use per bootstrap.}
 
-\item{resRange}{Numeric vector of resolutions to cluster over}
+\item{resRange}{Numeric vector of resolutions to cluster over.}
 
-\item{pcaMethod}{Method for computing pca (specify irbla for faster, less accurate PCA)}
+\item{pcaMethod}{Method for computing pca (specify irbla for faster, less accurate PCA).}
 
-\item{kNum}{number of nearest neighbours for knn graph construction}
+\item{kNum}{number of nearest neighbours for knn graph construction.}
 
 \item{mode}{How to deal with cluster assignments from different resolutions, either pick the one with highest silhouette score ('robust')
-or use all when deciding consensus clusters ('granular')}
+or use all when deciding consensus clusters ('granular').}
 
-\item{threads}{How many cpus to use in parallel}
+\item{threads}{How many cpus to use in parallel.}
 
-\item{assay}{Name of seurat or SingleCellExperiment assay, if providing an object rather than scaled counts}
+\item{assay}{Name of seurat or SingleCellExperiment assay, if providing an object rather than scaled counts.}
+
+\item{subsetGenes}{boolean array of same length as rownames(data), specifying which genes should be used for clustering,
+e.g. highly variable genes.}
 }
 \value{
-vector: character vector of consensus clustering assignments
+list: list containing
+'assignments': character vector of consensus clustering assignments
+'res': the clustering resolution which produced these optimal assignments
+'dendrogram': dendrogram showing the relatedness of output cluster assignments, based on the co-clustering distance matrix
 }
 \description{
 Perform consensus clustering on a scRNA-seq matrix
+}
+\examples{
+Using default settings and 5 PCs:
+results <- consensusClust(data, pcNum = 5)
+
+Using 5 PCs, 1000 bootstraps, more fine resolutions, and 15 cpus:
+results <- consensusClust(data, pcNum = 5, nboots=1000, resRange = seq.int(0.1, 1, by = 0.025), threads = 15)
+
+Using 5 PCs, and provinding a SingleCellExperiment experiment object 'data' with scaled features in the "logcounts" 
+assay, and a boolean array specifying whether genes are highly variable in the 'varaible' column of rowData(data):
+results <- consensusClust(data, pcNum = 5, assay = "logcounts", subsetGenes = rowData(data)$variable)
+
 }
