@@ -15,9 +15,9 @@
 #' @param subsetGenes boolean array of same length as rownames(data), specifying which genes should be used for clustering, 
 #' e.g. highly variable genes.
 #' 
-#' @return list: list containing
-#' 'assignments': character vector of consensus clustering assignments
-#' 'res': the clustering resolution which produced these optimal assignments
+#' @return list: list containing \n
+#' 'assignments': character vector of consensus clustering assignments \n
+#' 'res': the clustering resolution which produced these optimal assignments \n
 #' 'dendrogram': dendrogram showing the relatedness of output cluster assignments, based on the co-clustering distance matrix
 #' @export
 #' 
@@ -31,13 +31,13 @@
 #' @importFrom SummarizedExperiment assay
 #' 
 #' @examples
-#' Using default settings and 5 PCs:
+#' "Using default settings and 5 PCs:"
 #' results <- consensusClust(data, pcNum = 5)
 #' 
-#' Using 5 PCs, 1000 bootstraps, more fine resolutions, and 15 cpus:
+#' "Using 5 PCs, 1000 bootstraps, more fine resolutions, and 15 cpus:"
 #' results <- consensusClust(data, pcNum = 5, nboots=1000, resRange = seq.int(0.1, 1, by = 0.025), threads = 15)
 #' 
-#' Using 5 PCs, and provinding a SingleCellExperiment experiment object 'data' with scaled features in the "logcounts" 
+#' "Using 5 PCs, and provinding a SingleCellExperiment experiment object 'data' with scaled features in the "logcounts""
 #' assay, and a boolean array specifying whether genes are highly variable in the 'varaible' column of rowData(data):
 #' results <- consensusClust(data, pcNum = 5, assay = "logcounts", subsetGenes = rowData(data)$variable)
 #' 
