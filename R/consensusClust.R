@@ -33,13 +33,13 @@ consensusClust <- function(data, pcNum=15, nboots=200, clusterFun="leiden", boot
               any((class(data)=="Seurat") | (class(data)=="SingleCellExperiment") | (class(data)[1]=="matrix") |
                (class(data)=="dgCMatrix") ) )
   stopifnot("`pcNum` must be a positive integer, smaller than cell number." = 
-              all((pcNum%%1==0) & (pcNum > 0) & (pcNum < ncol(data))) )
+              all((length(pcNum)==1) (pcNum%%1==0) & (pcNum > 0) & (pcNum < ncol(data))) )
   stopifnot("`nboots` must be a positive integer." = 
-              all((nboots%%1==0) & (nboots > 0)) )
+              all((nboots%%1==0) & (nboots > 0) & (length(nboots)==1)) )
   stopifnot("`clusterFun` must be a either leiden or louvain." = 
               clusterFun %in% c("leiden", "louvain") )
-  stopifnot("`bootSize` must be a numeric number." = 
-              isSingleNumber(bootSize) )
+  stopifnot("`bootSize` must be a single number." = 
+              all((length(bootSize)==1) & (is.numeric(bootSize))) )
   stopifnot("`resRange` must be a numeric vector." = 
               is.numeric(resRange) )
   stopifnot("`pcaMethod` must be either 'irbla' or 'svd'." = 
