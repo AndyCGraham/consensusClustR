@@ -17,6 +17,9 @@ reflect the name of the assay you want to pull data from.
 
 Installation:
 ```
+if(!require("remotes")){
+  install.packages("xtable")
+}
 remotes::install_github("AndyCGraham/consensusClustR")
 ```
 
