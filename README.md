@@ -20,7 +20,7 @@ Installation:
 if(!require("BiocManager")){
   install.packages("BiocManager")
 }
-BiocManager::install("bluster")
+BiocManager::install("bluster", version= "1.10.0")
 
 if(!require("remotes")){
   install.packages("remotes")
