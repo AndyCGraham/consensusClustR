@@ -17,11 +17,6 @@ reflect the name of the assay you want to pull data from.
 
 Installation:
 ```
-if(!require("BiocManager")){
-  install.packages("BiocManager")
-}
-BiocManager::install("bluster")
-
 if(!require("remotes")){
   install.packages("remotes")
 }
