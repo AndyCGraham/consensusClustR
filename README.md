@@ -15,6 +15,11 @@ assignments, based on the co-clustering distance matric: 'clusterDendrogram'.
 Input can be a gene by cell data matrix, a Seurat object, or a SingleCellExperiment object. For a Seurat or SingleCellExperiment object, change the 'assay' parameter to
 reflect the name of the assay you want to pull data from.
 
+Installation:
+```
+remotes::install_github("AndyCGraham/consensusClustR")
+```
+
 Example use on a gene by cell data matrix called data, using 5 PCs and 12 cpus:
 
 ```
