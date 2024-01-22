@@ -31,13 +31,17 @@
 #' @importFrom SummarizedExperiment assay
 #' 
 #' @examples
-#' "Using default settings and 5 PCs:"
+#' #
+#' data = matrix(rnorm(36),nrow=3000, ncol=1000)
+#' #Using default settings and 5 PCs:
 #' results <- consensusClust(data, pcNum = 5)
 #' 
-#' "Using 5 PCs, 1000 bootstraps, more fine resolutions, and 15 cpus:"
+#' #Using 5 PCs, 1000 bootstraps, more fine resolutions, and 15 cpus:
 #' results <- consensusClust(data, pcNum = 5, nboots=1000, resRange = seq.int(0.1, 1, by = 0.025), threads = 15)
 #' 
-#' "Using 5 PCs, and provinding a SingleCellExperiment experiment object 'data' with scaled features in the "logcounts""
+#' #Using 5 PCs, and provinding a SingleCellExperiment experiment object 'data' with scaled features in the "logcounts"
+#' data = SingleCellExperiment(data) 
+#' rowData(data)$variable = sample(c(rep(TRUE, 1500), rep(FALSE, 1500)), 3000 ,replace = F) #Make fake variable gene column
 #' assay, and a boolean array specifying whether genes are highly variable in the 'varaible' column of rowData(data):
 #' results <- consensusClust(data, pcNum = 5, assay = "logcounts", subsetGenes = rowData(data)$variable)
 #' 
@@ -46,8 +50,7 @@ consensusClust <- function(data, pcNum=15, nboots=200, clusterFun="leiden", boot
   
   #Check input is correct
   stopifnot("`data` must be a matrix, sparse matrix of type dgCMatrix, seurat object, or single-cell experiment object." = 
-              any((class(data)=="Seurat") | (class(data)=="SingleCellExperiment") | (class(data)[1]=="matrix") |
-               (class(data)=="dgCMatrix") ) )
+              class(data)[1] %in% c("Seurat", "SingleCellExperiment", "matrix", "dgCMatrix") )
   stopifnot("`pcNum` must be a positive integer, smaller than cell number." = 
               all((length(pcNum)==1) & (pcNum%%1==0) & (pcNum > 0) & (pcNum < ncol(data))) )
   stopifnot("`nboots` must be a positive integer." = 
