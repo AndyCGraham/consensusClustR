@@ -31,17 +31,22 @@
 #' @importFrom SummarizedExperiment assay
 #' 
 #' @examples
-#' #
-#' data = matrix(rnorm(30000),nrow=3000, ncol=1000)
+#' library(consensusClustR)
+#' ncells <- 500
+#' counts <- matrix(rpois(1000000, 5), ncol=ncells)
+#' variable = sample(c(rep(TRUE, 1000), rep(FALSE, 1000)), 2000 ,replace = F) #Make fake variable gene column
+#' data <- t(scale(t(log2(counts + 1)))) # Scale and logcounts
+#' subsetData = data[variable,] #Subset to 'highly variable' features
+#' 
 #' #Using default settings and 5 PCs:
-#' results <- consensusClust(data, pcNum = 5)
+#' results <- consensusClust(subsetData, pcNum = 5)
 #' 
 #' #Using 5 PCs, 1000 bootstraps, more fine resolutions, and 15 cpus:
-#' results <- consensusClust(data, pcNum = 5, nboots=1000, resRange = seq.int(0.1, 1, by = 0.025), threads = 15)
+#' results <- consensusClust(subsetData, pcNum = 5, nboots=1000, resRange = seq.int(0.1, 1, by = 0.025), threads = 15)
 #' 
 #' #Using 5 PCs, and provinding a SingleCellExperiment experiment object 'data' with scaled features in the "logcounts"
 #' data = SingleCellExperiment(data) 
-#' rowData(data)$variable = sample(c(rep(TRUE, 1500), rep(FALSE, 1500)), 3000 ,replace = F) #Make fake variable gene column
+#' rowData(data)$variable = variable
 #' assay, and a boolean array specifying whether genes are highly variable in the 'varaible' column of rowData(data):
 #' results <- consensusClust(data, pcNum = 5, assay = "logcounts", subsetGenes = rowData(data)$variable)
 #' 
