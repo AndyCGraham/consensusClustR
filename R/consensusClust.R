@@ -180,7 +180,7 @@ getClustAssignments <- function(pca, pcNum, clusterFun="leiden", resRange, kNum,
   #Cluster adjacency matrix, returning assignments named by cell name
   clustAssignments = lapply(resRange, function(res){
     assignments = setNames(
-      clusterRows(t(pca), BLUSPARAM=NNGraphParam(k=kNum, cluster.fun=clusterFun, cluster.args=list(resolution=res))),
+      clusterRows(pca, BLUSPARAM=NNGraphParam(k=kNum, cluster.fun=clusterFun, cluster.args=list(resolution=res))),
       rownames(pca) 
     )
     
