@@ -23,14 +23,18 @@ if(!require("remotes")){
 }
 remotes::install_github("AndyCGraham/consensusClustR")
 ```
-
+  
 Example use on a cell by PC principal component matrix called pca, using 5 PCs and 12 cpus:
 ```
+library(consensusClustR)
 results <- consensusClust(pca, pcNum = 5, threads = 12)
 ```
-
+  
 Example use on a Seurat object called data, using 5 PCs and 12 cpus:
 ```
+library(consensusClustR)
+library(Seurat)
+
 #Run PCA as normal with Seurat
 data = RunPCA(data)
 
@@ -45,4 +49,7 @@ data$consensusClusts = results$assignments
 
 #Make consensusClusts the cell identities
 Idents(data) = data$consensusClusts
+
+#Show cluster dendrogram plot, to visualise cluster relatedness
+plot(results$clusterDendogram)
 ```
