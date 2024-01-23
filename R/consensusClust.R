@@ -58,7 +58,7 @@ consensusClust <- function(pca, pcNum=15, nboots=200, clusterFun="leiden", bootS
   
   #Check input is correct
   stopifnot("`data` must be a matrix, sparse matrix of type dgCMatrix, seurat object, or single-cell experiment object." = 
-              class(data)[1] %in% c("Seurat", "SingleCellExperiment", "matrix", "dgCMatrix") )
+              class(pca)[1] %in% c("Seurat", "SingleCellExperiment", "matrix", "dgCMatrix") )
   stopifnot("`pcNum` must be a positive integer, smaller than cell number." = 
               all((length(pcNum)==1) & (pcNum%%1==0) & (pcNum > 0) & (pcNum < ncol(data))) )
   stopifnot("`nboots` must be a positive integer." = 

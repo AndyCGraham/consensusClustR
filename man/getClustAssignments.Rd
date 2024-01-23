@@ -5,11 +5,10 @@
 \title{Conducts PCA, and clusters cells based on resulting PCs, returning assignments as a dataframe}
 \usage{
 getClustAssignments(
-  scaledCounts,
+  pca,
   pcNum,
   clusterFun = "leiden",
   resRange,
-  pcaMethod,
   kNum,
   mode = "robust",
   cellOrder,
@@ -17,15 +16,11 @@ getClustAssignments(
 )
 }
 \arguments{
-\item{scaledCounts}{Matrix of scaled counts}
-
 \item{pcNum}{number of principal components to consider when finding nearest neighbours}
 
 \item{clusterFun}{Which of the igraph community detection algorithms to use for clustering: "leiden" or "louvain"}
 
 \item{resRange}{Numeric vector of resolutions to cluster over}
-
-\item{pcaMethod}{Method for computing pca (specify irbla for faster, less accurate PCA)}
 
 \item{kNum}{number of nearest neighbours for knn graph construction}
 
@@ -33,6 +28,8 @@ getClustAssignments(
 or use all when deciding consensus clusters ('granular')}
 
 \item{cellOrder}{Vector of non-boostrapped cellnames in the order of the non-boostrapped data matrix}
+
+\item{scaledCounts}{Matrix of scaled counts}
 }
 \description{
 Conducts PCA, and clusters cells based on resulting PCs, returning assignments as a dataframe

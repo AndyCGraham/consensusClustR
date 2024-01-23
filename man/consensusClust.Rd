@@ -5,23 +5,20 @@
 \title{Perform consensus clustering on a scRNA-seq matrix}
 \usage{
 consensusClust(
-  data,
+  pca,
   pcNum = 15,
   nboots = 200,
   clusterFun = "leiden",
   bootSize = 0.8,
   resRange = seq.int(0.05, 1, by = 0.05),
-  pcaMethod = "irbla",
   kNum = 30,
   mode = "robust",
   threads = 1,
-  assay = "RNA",
-  subsetGenes = NULL,
   ...
 )
 }
 \arguments{
-\item{data}{matrix of scaled counts, or a Seurat or SingleCellExperiment object from which these can be extracted.}
+\item{pca}{matrix of principal components, or a Seurat or SingleCellExperiment object from which these can be extracted.}
 
 \item{pcNum}{number of principal components to consider when finding nearest neighbours.}
 
@@ -33,19 +30,12 @@ consensusClust(
 
 \item{resRange}{Numeric vector of resolutions to cluster over.}
 
-\item{pcaMethod}{Method for computing pca (specify irbla for faster, less accurate PCA).}
-
 \item{kNum}{number of nearest neighbours for knn graph construction.}
 
 \item{mode}{How to deal with cluster assignments from different resolutions, either pick the one with highest silhouette score ('robust')
 or use all when deciding consensus clusters ('granular').}
 
 \item{threads}{How many cpus to use in parallel.}
-
-\item{assay}{Name of seurat or SingleCellExperiment assay, if providing an object rather than scaled counts.}
-
-\item{subsetGenes}{boolean array of same length as rownames(data), specifying which genes should be used for clustering,
-e.g. highly variable genes.}
 }
 \value{
 list containing:
@@ -58,24 +48,29 @@ Perform consensus clustering on a scRNA-seq matrix
 }
 \examples{
 library(consensusClustR)
-ncells <- 500
-counts <- matrix(rpois(1000000, 5), ncol=ncells)
-variable = sample(c(rep(TRUE, 1000), rep(FALSE, 1000)), 2000 ,replace = F) #Make fake variable gene column
-data <- t(scale(t(log2(counts + 1)))) # Scale and logcounts
-colnames(data) = c(1:500)
-rownames(data) = c(1:2000)
-subsetData = data[variable,] #Subset to 'highly variable' features
 
-#Using default settings and 5 PCs:
-results <- consensusClust(subsetData, pcNum = 5)
+#Make a fake PCA matrix
+ncells <- 500
+pca <- matrix(rpois(25000, 5), nrow=ncells)
+colnames(pca) = c(1:50)
+rownames(pca) = c(1:500)
+
+#Cluster using default settings and 5 PCs:
+results <- consensusClust(pca, pcNum = 5)
 
 #Using 5 PCs, 1000 bootstraps, more fine resolutions, and 15 cpus:
-results <- consensusClust(subsetData, pcNum = 5, nboots=1000, resRange = seq.int(0.1, 1, by = 0.025), threads = 15)
+results <- consensusClust(pca, pcNum = 5, nboots=1000, resRange = seq.int(0.1, 1, by = 0.025), threads = 15)
 
 #Using 5 PCs, and provinding a SingleCellExperiment experiment object 'data' with scaled features in the "logcounts" assay, 
 #and a boolean array specifying whether genes are highly variable in the 'varaible' column of rowData(data):
-data = SingleCellExperiment(assays=list(counts=counts, logcounts=data)) 
-rowData(data)$variable = variable
-results <- consensusClust(data, pcNum = 5, assay = "logcounts", subsetGenes = rowData(data)$variable)
+#Requires SingleCellExperiment and scater packages from bioconductor
+library(SingleCellExperiment)
+counts <- matrix(rpois(1000000, 5), ncol=ncells)
+data <- t(scale(t(log2(counts + 1)))) # Scale and logcounts
+colnames(data) = c(1:500)
+rownames(data) = c(1:2000)
+sce = SingleCellExperiment(assays=list(counts=counts, logcounts=data)) 
+sce = scater::runPCA(sce, ntop=500)
+results <- consensusClust(sce, pcNum = 5)
 
 }
