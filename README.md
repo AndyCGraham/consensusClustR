@@ -14,7 +14,7 @@ Briefly this function:
 'res': the value of the resolution which produced the most distinct clusters.
 'clusterDendrogram': a dendrogram showing the relatedness of output cluster assignments, based on the co-clustering distance matrix.
 
-Input can be a gene by cell data matrix, a Seurat object, or a SingleCellExperiment object, from which the function will extract the pca if it's already present.
+Input can be a cell by principal component cell embeddings matrix from principal component analysis (e.g. SeuratObj@reductions$pca@cell.embeddings), a Seurat object, or a SingleCellExperiment object, from which the function will extract the pca cell embeddings if it's already present.
 
 Installation:
 ```
