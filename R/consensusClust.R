@@ -1,19 +1,15 @@
 #' Perform consensus clustering on a scRNA-seq matrix
 #'
-#' @param data matrix of scaled counts, or a Seurat or SingleCellExperiment object from which these can be extracted.
+#' @param pca matrix of principal components, or a Seurat or SingleCellExperiment object from which these can be extracted.
 #' @param pcNum number of principal components to consider when finding nearest neighbours.
 #' @param nboots number of boostraps to perform.
 #' @param clusterFun Which of the igraph community detection algorithms to use for clustering: "leiden" or "louvain".
 #' @param bootSize fraction of total cell number to use per bootstrap.
 #' @param resRange Numeric vector of resolutions to cluster over.
-#' @param pcaMethod Method for computing pca (specify irbla for faster, less accurate PCA).
 #' @param kNum number of nearest neighbours for knn graph construction.
 #' @param mode How to deal with cluster assignments from different resolutions, either pick the one with highest silhouette score ('robust')
 #' or use all when deciding consensus clusters ('granular').
 #' @param threads How many cpus to use in parallel.
-#' @param assay Name of seurat or SingleCellExperiment assay, if providing an object rather than scaled counts.
-#' @param subsetGenes boolean array of same length as rownames(data), specifying which genes should be used for clustering, 
-#' e.g. highly variable genes.
 #' 
 #' @return list containing:
 #' 'assignments': character vector of consensus clustering assignments;
@@ -32,28 +28,33 @@
 #' 
 #' @examples
 #' library(consensusClustR)
-#' ncells <- 500
-#' counts <- matrix(rpois(1000000, 5), ncol=ncells)
-#' variable = sample(c(rep(TRUE, 1000), rep(FALSE, 1000)), 2000 ,replace = F) #Make fake variable gene column
-#' data <- t(scale(t(log2(counts + 1)))) # Scale and logcounts
-#' colnames(data) = c(1:500)
-#' rownames(data) = c(1:2000)
-#' subsetData = data[variable,] #Subset to 'highly variable' features
 #' 
-#' #Using default settings and 5 PCs:
-#' results <- consensusClust(subsetData, pcNum = 5)
+#' #Make a fake PCA matrix
+#' ncells <- 500
+#' pca <- matrix(rpois(25000, 5), nrow=ncells)
+#' colnames(pca) = c(1:50)
+#' rownames(pca) = c(1:500)
+#' 
+#' #Cluster using default settings and 5 PCs:
+#' results <- consensusClust(pca, pcNum = 5)
 #' 
 #' #Using 5 PCs, 1000 bootstraps, more fine resolutions, and 15 cpus:
-#' results <- consensusClust(subsetData, pcNum = 5, nboots=1000, resRange = seq.int(0.1, 1, by = 0.025), threads = 15)
+#' results <- consensusClust(pca, pcNum = 5, nboots=1000, resRange = seq.int(0.1, 1, by = 0.025), threads = 15)
 #' 
 #' #Using 5 PCs, and provinding a SingleCellExperiment experiment object 'data' with scaled features in the "logcounts" assay, 
 #' #and a boolean array specifying whether genes are highly variable in the 'varaible' column of rowData(data):
-#' data = SingleCellExperiment(assays=list(counts=counts, logcounts=data)) 
-#' rowData(data)$variable = variable
-#' results <- consensusClust(data, pcNum = 5, assay = "logcounts", subsetGenes = rowData(data)$variable)
+#' #Requires SingleCellExperiment and scater packages from bioconductor
+#' library(SingleCellExperiment)
+#' counts <- matrix(rpois(1000000, 5), ncol=ncells)
+#' data <- t(scale(t(log2(counts + 1)))) # Scale and logcounts
+#' colnames(data) = c(1:500)
+#' rownames(data) = c(1:2000)
+#' sce = SingleCellExperiment(assays=list(counts=counts, logcounts=data)) 
+#' sce = scater::runPCA(sce, ntop=500)
+#' results <- consensusClust(sce, pcNum = 5)
 #' 
-consensusClust <- function(data, pcNum=15, nboots=200, clusterFun="leiden", bootSize=0.8, resRange = seq.int(0.05, 1, by = 0.05),  
-                            pcaMethod = "irbla", kNum=30, mode = "robust", threads=1, assay="RNA", subsetGenes=NULL, ...) {
+consensusClust <- function(pca, pcNum=15, nboots=200, clusterFun="leiden", bootSize=0.8, resRange = seq.int(0.05, 1, by = 0.05),  
+                            kNum=30, mode = "robust", threads=1, ...) {
   
   #Check input is correct
   stopifnot("`data` must be a matrix, sparse matrix of type dgCMatrix, seurat object, or single-cell experiment object." = 
@@ -68,8 +69,6 @@ consensusClust <- function(data, pcNum=15, nboots=200, clusterFun="leiden", boot
               all((length(bootSize)==1) & (is.numeric(bootSize))) )
   stopifnot("`resRange` must be a numeric vector." = 
               is.numeric(resRange) )
-  stopifnot("`pcaMethod` must be either 'irbla' or 'svd'." = 
-              pcaMethod %in% c("irbla", "svd") )
   stopifnot("`kNum` must be a positive integer." = 
               all((kNum%%1==0) & (kNum > 0)))
   stopifnot("`mode` must be either 'robust' or 'granular'." = 
@@ -77,30 +76,26 @@ consensusClust <- function(data, pcNum=15, nboots=200, clusterFun="leiden", boot
   stopifnot("`threads` must be a positive integer." = 
               all((threads%%1==0) & (threads > 0)))
   
-  
-  if(class(data)[1]=="Seurat"){
-    data = data[[assay]]$scale.data
-  } else if(class(data)[1]=="SingleCellExperiment"){
-    data = assay(data, assay)
+  #Get PCA from Seurat or SingleCellExperiment object
+  if(class(pca)[1]=="Seurat"){
+    pca = pca@reductions$pca@cell.embeddings
+  } else if(class(pca)[1]=="SingleCellExperiment"){
+    pca = reducedDim(pca, "PCA")
   }
   
-  #Subset data matrix to certain genes if subsetGenes is used
-  if(!is.null(subsetGenes)){
-    stopifnot("`subsetGenes` must be a boolean array of same length as rownames(data)." = 
-                all((class(subsetGenes)=="logical") & (length(subsetGenes) == length(rownames(data)))))
-    data = data[subsetGenes,]
-  }
+  #Select only useful PCs
+  pca = pca[, 1:pcNum]
   
   #Get cluster assignments for bootstrapped selections of cells
   clustAssignments = mclapply(1:nboots, \(boot){
-    getClustAssignments( data[,sample(colnames(data), bootSize*length(colnames(data)), replace = TRUE)],
-    pcNum = pcNum, resRange = resRange,kNum=kNum, clusterFun = clusterFun, pcaMethod = pcaMethod, cellOrder = colnames(data), mode = mode)
+    getClustAssignments( pca[sample(rownames(pca), bootSize*length(rownames(pca)), replace = TRUE),],
+    resRange = resRange, kNum=kNum, clusterFun = clusterFun, cellOrder = rownames(pca), mode = mode)
     }, mc.cores = threads )
   
   ##Calculate cell-cell distance matrix based on these co-clusterings
   #Get clustering assignments in the right format (dataframe)
   clustAssignments = do.call(cbind, clustAssignments)
-  rownames(clustAssignments) = colnames(data)
+  rownames(clustAssignments) = rownames(pca)
   
   #Alter NAs to -1, which will be ignored by the distance function
   clustAssignments[is.na(clustAssignments)] = -1
@@ -167,7 +162,6 @@ consensusClust <- function(data, pcNum=15, nboots=200, clusterFun="leiden", boot
 #' @param pcNum number of principal components to consider when finding nearest neighbours
 #' @param clusterFun Which of the igraph community detection algorithms to use for clustering: "leiden" or "louvain"
 #' @param resRange Numeric vector of resolutions to cluster over
-#' @param pcaMethod Method for computing pca (specify irbla for faster, less accurate PCA)
 #' @param kNum number of nearest neighbours for knn graph construction
 #' @param mode How to deal with cluster assignments from different resolutions, either pick the one with highest silhouette score ('robust')
 #' or use all when deciding consensus clusters ('granular')
@@ -179,25 +173,18 @@ consensusClust <- function(data, pcNum=15, nboots=200, clusterFun="leiden", boot
 #' @importFrom irlba  irlba
 #' @importFrom cluster  silhouette
 #' 
-getClustAssignments <- function(scaledCounts, pcNum, clusterFun="leiden", resRange, pcaMethod, kNum, mode = "robust", cellOrder, ...) {
-  
-  if(pcaMethod == "irbla"){
-    pcs = irlba::irlba(scaledCounts, pcNum)$v
-  } else {
-    pcs = svd(scaledCounts, 
-              nv = pcNum)$v
-    }
+getClustAssignments <- function(pca, pcNum, clusterFun="leiden", resRange, kNum, mode = "robust", cellOrder, ...) {
   
   #Cluster adjacency matrix, returning assignments named by cell name
   clustAssignments = purrr::map(resRange, function(res){
     assignments = setNames(
-      clusterRows(pcs, BLUSPARAM=NNGraphParam(k=kNum, cluster.fun=clusterFun, cluster.args=list(resolution=res))),
-      colnames(scaledCounts) 
+      clusterRows(pca, BLUSPARAM=NNGraphParam(k=kNum, cluster.fun=clusterFun, cluster.args=list(resolution=res))),
+      rownames(pca) 
     )
     
     if(mode == "robust"){
       if(length(unique(assignments))>1){
-        clustScore = mean(aggregate(width ~ cluster, approxSilhouette(pcs, assignments), mean)[,2], na.rm = T)
+        clustScore = mean(aggregate(width ~ cluster, approxSilhouette(pca, assignments), mean)[,2], na.rm = T)
       } else {
         clustScore = 0.15
       }
