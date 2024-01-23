@@ -86,6 +86,9 @@ consensusClust <- function(pca, pcNum=15, nboots=200, clusterFun="leiden", bootS
   #Select only useful PCs
   pca = pca[, 1:pcNum]
   
+  #Name cells
+  rownames(pca) = paste0("Cell_", c(1:nrow(pca)))
+    
   #Get cluster assignments for bootstrapped selections of cells
   clustAssignments = mclapply(1:nboots, \(boot){
     getClustAssignments( pca[sample(rownames(pca), bootSize*length(rownames(pca)), replace = TRUE),],
@@ -172,13 +175,12 @@ consensusClust <- function(pca, pcNum=15, nboots=200, clusterFun="leiden", bootS
 #' @importFrom bluster clusterRows  NNGraphParam  approxSilhouette
 #' @importFrom irlba  irlba
 #' @importFrom cluster  silhouette
-#' 
 getClustAssignments <- function(pca, pcNum, clusterFun="leiden", resRange, kNum, mode = "robust", cellOrder, ...) {
   
   #Cluster adjacency matrix, returning assignments named by cell name
-  clustAssignments = purrr::map(resRange, function(res){
+  clustAssignments = lapply(resRange, function(res){
     assignments = setNames(
-      clusterRows(pca, BLUSPARAM=NNGraphParam(k=kNum, cluster.fun=clusterFun, cluster.args=list(resolution=res))),
+      clusterRows(t(pca), BLUSPARAM=NNGraphParam(k=kNum, cluster.fun=clusterFun, cluster.args=list(resolution=res))),
       rownames(pca) 
     )
     
@@ -201,7 +203,7 @@ getClustAssignments <- function(pca, pcNum, clusterFun="leiden", resRange, kNum,
   })
   
   if(mode == "robust"){
-    clustScores = rank(unlist(purrr::map(clustAssignments, \(res) res[[2]] )), ties.method ="first")
+    clustScores = rank(unlist(lapply(clustAssignments, \(res) res[[2]] )), ties.method ="first")
     clustAssignments = clustAssignments[[which(clustScores == max(clustScores))]][[1]]
   } else {
     clustAssignments = do.call(cbind, clustAssignments)
