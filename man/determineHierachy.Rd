@@ -2,9 +2,9 @@
 % Please edit documentation in R/consensusClust.R
 \name{determineHierachy}
 \alias{determineHierachy}
-\title{Conducts PCA, and clusters cells based on resulting PCs, returning assignments as a dataframe}
+\title{Computes dendrogram between clusters}
 \usage{
-determineHierachy(distanceMatrix, assignments)
+determineHierachy(distanceMatrix, assignments, return = "hclust")
 }
 \arguments{
 \item{distanceMatrix}{Matrix of cell-cell distances}
@@ -12,5 +12,5 @@ determineHierachy(distanceMatrix, assignments)
 \item{assignments}{clustering assignments}
 }
 \description{
-Conducts PCA, and clusters cells based on resulting PCs, returning assignments as a dataframe
+Computes dendrogram between clusters
 }

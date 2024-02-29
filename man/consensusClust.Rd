@@ -2,40 +2,103 @@
 % Please edit documentation in R/consensusClust.R
 \name{consensusClust}
 \alias{consensusClust}
-\title{Perform consensus clustering on a scRNA-seq matrix}
+\title{Performs iterative consensus clustering of a scRNA-seq matrix, to find robust, statistically distinct cell clusters.}
 \usage{
 consensusClust(
-  pca,
-  pcNum = 15,
-  nboots = 200,
+  counts,
+  iterate = FALSE,
+  alpha = 0.05,
+  pca = NULL,
+  pcNum = "find",
+  pcaMethod = "irlba",
+  scale = T,
+  center = T,
+  sizeFactors = "deconvolution",
+  variableFeatures = NULL,
+  nVarFeatures = 2000,
+  varsToRegress = NULL,
+  regressMethod = "lm",
+  skipFirstRegression = F,
+  nboots = 100,
+  bootSize = 0.9,
   clusterFun = "leiden",
-  bootSize = 0.8,
-  resRange = seq.int(0.05, 1, by = 0.05),
+  resRange = c(0.01, 0.03, 0.05, 0.07, 0.1, seq.int(0.11, 1.5, length.out = 10)),
   kNum = 30,
+  silhouetteThresh = 0.4,
+  minSize = 50,
+  assay = "RNA",
   mode = "robust",
-  threads = 1,
+  BPPARAM = SerialParam(RNGseed = seed),
+  seed = 123,
+  depth = 1,
   ...
 )
 }
 \arguments{
-\item{pca}{matrix of principal components, or a Seurat or SingleCellExperiment object from which these can be extracted.}
+\item{counts}{gene by cell matrix of scRNA-seq counts, or a Seurat or SingleCellExperiment object from which
+these can be extracted.}
 
-\item{pcNum}{number of principal components to consider when finding nearest neighbours.}
+\item{iterate}{Boolean specifying whether to continuously subcluster until no statistically distinct cluster are found. Default: FALSE.}
 
-\item{nboots}{number of boostraps to perform.}
+\item{alpha}{Significance threshold for difference between silhouette scores generated from clustering real vs null data.}
+
+\item{pca}{A cell by pc pricipal component matrix. If left NULL, will be computed internally.}
+
+\item{pcNum}{number of principal components to consider when finding nearest neighbours. If left as "find", willl be determined internally.}
+
+\item{pcaMethod}{Method to compute PCA. Either irlba (default) - fast and memory efficient, 'prcomp' - base R prcomp, or 'svd' - base R svd.}
+
+\item{scale}{Boolean specifying whether normalised counts be scaled prior to pca computation. Default: TRUE.}
+
+\item{center}{Boolean specifying whether normalised counts be centered prior to pca computation. Default: TRUE.}
+
+\item{sizeFactors}{Either a vector of precomputed sizefactors to normalize by, or a character vector to specify how to compute these (see
+shifted_log_transform function from the transformGamPoi package for details). Default: 'deconvolution' - pooled size factor estimation using
+the scran package (requires that scran is installed on your machine).}
+
+\item{variableFeatures}{Boolean array specifying whether counts are variable features or name of single cell experiment row data columns
+with this array. If not provided, will be determined using scry devianceFeatureSelection. If Seurat object is provided which contains veriable
+features, these will be used for the first clustering, unless variableFeatures is set to 'Find', in which case scry devianceFeatureSelection will be
+used. Setting to 'None' will use all features.}
+
+\item{nVarFeatures}{Number of variable features to conduct pca on. Default is 2000.}
+
+\item{varsToRegress}{Variables to regress from counts, prior to pca computation. Either a dataframe of variables, with each column being a seperate
+variable to regress and each row being a cell in counts, or a character vector of names of columns present in a Seurat or SingleCellExperiment
+object, which is provided to counts.}
+
+\item{regressMethod}{method to regress variables from counts, either "lm" - linear regression of normalised counts, 'glmgampoi' - alpha gamma
+regression of raw counts using the glmgampoi packaged (requires that glmgampoi is installed on your machine), or 'poisson' - poisson
+regression of raw counts.}
+
+\item{skipFirstRegression}{Either a character vector specifying varsToRegress variables not to regress on the first clustering (e.g. don't regress
+the effect of percent of mitochondrial genes or read depth when multiple cell types are likely present, as these factors are likely confounded with
+cell type), or a boolean specifying whether to skip regression for all varsToRegress variables during the first clustering. Default: FALSE.}
+
+\item{nboots}{Number of bootstrap samplings to perform, to identify robust clusters. Increasing will increase runtime, decreasing may identify less
+robust clusters, or reduce ability to identify true, less distinct clusters. Default: 100.}
 
 \item{clusterFun}{Which of the igraph community detection algorithms to use for clustering: "leiden" or "louvain".}
 
-\item{bootSize}{fraction of total cell number to use per bootstrap.}
-
-\item{resRange}{Numeric vector of resolutions to cluster over.}
+\item{resRange}{Numeric vector of resolutions to cluster over. Default: c(0.01, 0.03, 0.05, 0.07, 0.10, seq.int(0.11, 1.5, length.out=10)).}
 
 \item{kNum}{number of nearest neighbours for knn graph construction.}
+
+\item{silhouetteThresh}{Threshold silhouette score, below which to test whether such a score could arise from sampling (poisson) noise.
+Deafult: 0.4, as we have found sampling noise rarely if ever produces clusters this distinct. Raise to 1 to test all clusterings, at the
+cost of increased runtime.}
+
+\item{minSize}{Minimum size of a cluster to try to subcluster. Default: 50 cells. Reduce to 0 to try subcluster everything, at the cost of
+increased runtime.}
+
+\item{assay}{Name of Seurat assay to extract counts from if proving a Seurat object.}
 
 \item{mode}{How to deal with cluster assignments from different resolutions, either pick the one with highest silhouette score ('robust')
 or use all when deciding consensus clusters ('granular').}
 
-\item{threads}{How many cpus to use in parallel.}
+\item{BPPARAM}{Biocparallel paramters to run in parallel.}
+
+\item{bootsize}{Size of bootstrap samples as a proportion of original cell number. Default: 0.9.}
 }
 \value{
 list containing:
@@ -44,33 +107,48 @@ list containing:
 'dendrogram': dendrogram showing the relatedness of output cluster assignments, based on the co-clustering distance matrix
 }
 \description{
-Perform consensus clustering on a scRNA-seq matrix
+Performs iterative consensus clustering of a scRNA-seq matrix, to find robust, statistically distinct cell clusters.
 }
 \examples{
 library(consensusClustR)
 
-#Make a fake PCA matrix
-ncells <- 500
-pca <- matrix(rpois(25000, 5), nrow=ncells)
-colnames(pca) = c(1:50)
-rownames(pca) = c(1:500)
+#Example fake counts matrix
+ncells = 500
+ngenes = 20000
+counts = matrix(rpois(ncells*ngenes, 5), ncol=ncells)
+colnames(counts) = c(1:ncells)
+rownames(counts) = c(1:ngenes)
 
-#Cluster using default settings and 5 PCs:
-results <- consensusClust(pca, pcNum = 5)
+#Cluster:
+results <- consensusClust(counts)
 
-#Using 5 PCs, 1000 bootstraps, more fine resolutions, and 15 cpus:
-results <- consensusClust(pca, pcNum = 5, nboots=1000, resRange = seq.int(0.1, 1, by = 0.025), threads = 15)
+#Cluster with prefined number of PCs (for the first clustering if iterating):
+results <- consensusClust(counts, pcNum = 7)
 
-#Using 5 PCs, and provinding a SingleCellExperiment experiment object 'data' with scaled features in the "logcounts" assay, 
-#and a boolean array specifying whether genes are highly variable in the 'varaible' column of rowData(data):
-#Requires SingleCellExperiment and scater packages from bioconductor
+#Iteratively cluster until no statistically significant subclusters are found
+results <- consensusClust(counts, iterate=TRUE)
+
+#Iteratively cluster until no statistically significant subclusters are found, and 10 cores, ensuring reproducible random seed
+library(BiocParallel)
+results <- consensusClust(counts, iterate=TRUE, BPPARAM = MulticoreParam(RNGseed = 123, workers=10))
+
+#' #Using 5 PCs, and provinding a SingleCellExperiment experiment object 'data' with raw counts in the 'counts' assay,
+and normalised features in the "logcounts" assay, iterating until completion:
+#Requires Seurat package
+library(Seurat)
+data = log2(counts + 1) # Scale and logcounts
+colnames(data) = c(1:ncells)
+rownames(data) = c(1:ngenes)
+seurat = CreateSeuratObject(counts = counts, data = data) 
+results = consensusClust(seurat, pcNum = 5, iterate = T)
+
+#Using 5 PCs, and provinding a SingleCellExperiment experiment object 'data' with raw counts in the 'counts' assay,
+and normalised features in the "logcounts" assay, iterating until completion:
+#Requires SingleCellExperiment package from bioconductor
 library(SingleCellExperiment)
-counts <- matrix(rpois(1000000, 5), ncol=ncells)
-data <- t(scale(t(log2(counts + 1)))) # Scale and logcounts
-colnames(data) = c(1:500)
-rownames(data) = c(1:2000)
+colnames(data) = c(1:ncells)
+rownames(data) = c(1:ngenes)
 sce = SingleCellExperiment(assays=list(counts=counts, logcounts=data)) 
-sce = scater::runPCA(sce, ntop=500)
-results <- consensusClust(sce, pcNum = 5)
+results = consensusClust(sce, pcNum = 5, iterate = T)
 
 }

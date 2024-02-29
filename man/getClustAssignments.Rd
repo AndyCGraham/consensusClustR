@@ -12,6 +12,7 @@ getClustAssignments(
   kNum,
   mode = "robust",
   cellOrder,
+  seed,
   ...
 )
 }
