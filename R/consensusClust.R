@@ -582,7 +582,7 @@ determineHierachy <- function(distanceMatrix, assignments, return = "hclust") {
 #' @importFrom irlba prcomp_irlba
 #' @importFrom scDesign3 simu_new
 #' @importFrom transformGamPoi shifted_log_transform
-#' @importFrom biocparallel SerialParam
+#' @importFrom BiocParallel SerialParam
 #' @noRd
 #'
 generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale, center,varsToRegress,regressMethod, seed, ...) {
