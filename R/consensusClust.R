@@ -283,8 +283,16 @@
   
   #Compute PCA if not extracted from an input Seurat or SCE object
   if(is.null(pca)){
-    pcaList = prcomp_irlba(t(normCounts), pcNum, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})
-    pca = pcaList$x
+    pca = tryCatch(
+      {
+        prcomp_irlba(t(normCounts), pcNum, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})$x
+      },
+      error = function(e) {
+        NA
+      } )
+    if(all(is.na(pca))){
+      return(list(assignments = rep(1, ncol(normCounts)), clusterDendrogram = NULL, clustree=NULL))
+    }
     rownames(pca) = colnames(normCounts)
   } 
   
@@ -642,7 +650,7 @@ Mode <- function(x) {
 #' @importFrom glmGamPoi glm_gp
 #' @noRd
 #'
-regressFeatures = function(normCounts, variablesToRegress,regressMethod, BPPARAM = SerialParam(RNGseed = seed), seed){
+regressFeatures = function(normCounts, variablesToRegress,regressMethod, BPPARAM, seed){
   
   #Regress out effect of variablestoRegress
   normCounts = if(regressMethod == "lm"){
