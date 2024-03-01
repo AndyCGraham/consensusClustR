@@ -433,10 +433,10 @@
       #Decide whether to parallelise the runs or functions within the runs, based on how many runs are needed
       if(length(unique(finalAssignments)) >= BPPARAM$workers){
         withinRunsBPPARAM = SerialParam(RNGseed = seed)
-      } else (
+      } else {
         withinRunsBPPARAM = BPPARAM
         BPPARAM = SerialParam(RNGseed = seed)
-      )
+      }
       subassignments = bptry(bplapply(clustersToSubcluster, function(cluster){
         #Subset vars to regress
         newVarsToRegress = as.data.frame(varsToRegress[finalAssignments == cluster, ])
