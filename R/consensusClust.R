@@ -268,8 +268,8 @@
         pcNum = ncol(getDenoisedPCs(normCounts, var.stats, subset.row=NULL)$components)
       } else {
         #Otherise use variance explained
-        pca = irlba(t(normCounts), 30, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})
-        pcNum = max(which(sapply(1:30, \(pcNum) sum(pca[["d"]][1:pcNum])/ sum(pca[["d"]]) ) > 0.25)[1], 5)
+        pca = prcomp_irlba(t(normCounts), 30, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})
+        pcNum = max(which(sapply(1:30, \(pcNum) sum(pca[["sdev"]][1:pcNum])/ sum(pca[["sdev"]]) ) > 0.25)[1], 5)
         pca = pca$u %*% diag(sqrt(pca$d))
         rownames(pca) = colnames(normCounts)
       }
