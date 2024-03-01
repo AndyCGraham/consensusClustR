@@ -18,7 +18,6 @@ Imports:
     parallelDist (>= 0.2.6),
     irlba (>= 2.3.5.1),
     clustree (>= 0.5.1),
-    clustree (>= 1.1.2),
     transformGamPoi (>= 1.6.0),
     MASS (>= 7.3.60.0.1),
     sparseMatrixStats (>= 1.12.2),

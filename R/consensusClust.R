@@ -608,8 +608,13 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale,
   null = shifted_log_transform(null, size_factors = "deconvolution")
   null = regressFeatures(null, varsToRegress, regressMethod = regressMethod, BPPARAM = SerialParam(RNGseed = seed), seed=seed)
   
-  pcaNull = prcomp_irlba(t(null), 50, scale=if(center){rowSds(null)}else{NULL}, center=if(center){rowMeans2(null)}else{NULL})$x
-  pcaNull = pcaNull[,1:pcNum]
+  pcaNull = tryCatch(
+    {
+      prcomp_irlba(t(null), pcNum, scale=if(center){rowSds(null)}else{NULL}, center=if(center){rowMeans2(null)}else{NULL})$x
+    },
+    error = function(cond) {
+      NA
+    } )
   
   if(all(is.na(pcaNull))){
     return(0)
