@@ -270,7 +270,6 @@
         #Otherise use variance explained
         pca = prcomp_irlba(t(as.matrix(normCounts)), 30, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})
         pcNum = max(which(sapply(1:30, \(pcNum) sum(pca[["sdev"]][1:pcNum])/ sum(pca[["sdev"]]) ) > 0.25)[1], 5)
-        pca = pca$u %*% diag(sqrt(pca$d))
         rownames(pca) = colnames(normCounts)
       }
     }
