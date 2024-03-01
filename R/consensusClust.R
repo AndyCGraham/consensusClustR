@@ -612,7 +612,7 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale,
     {
       prcomp_irlba(t(null), pcNum, scale=if(center){rowSds(null)}else{NULL}, center=if(center){rowMeans2(null)}else{NULL})$x
     },
-    error = function(cond) {
+    error = function(e) {
       NA
     } )
   
