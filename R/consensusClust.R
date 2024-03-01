@@ -268,7 +268,7 @@
         pcNum = ncol(getDenoisedPCs(normCounts, var.stats, subset.row=NULL)$components)
       } else {
         #Otherise use variance explained
-        pca = prcomp_irlba(t(normCounts), 30, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})
+        pca = prcomp_irlba(t(as.matrix(normCounts)), 30, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})
         pcNum = max(which(sapply(1:30, \(pcNum) sum(pca[["sdev"]][1:pcNum])/ sum(pca[["sdev"]]) ) > 0.25)[1], 5)
         pca = pca$u %*% diag(sqrt(pca$d))
         rownames(pca) = colnames(normCounts)
@@ -291,7 +291,7 @@
         NA
       } )
     if(all(is.na(pca))){
-      return(list(assignments = rep(1, ncol(normCounts)), clusterDendrogram = NULL, clustree=NULL))
+      return(list(assignments = rep("1", ncol(normCounts)), clusterDendrogram = NULL, clustree=NULL))
     }
     rownames(pca) = colnames(normCounts)
   } 
@@ -430,6 +430,13 @@
     if(all(pval < alpha, iterate)){
       clustersToSubcluster = unique(finalAssignments)[sapply(unique(finalAssignments), \(cluster) sum(finalAssignments == cluster)) > minSize]
       clustersToSubcluster = setNames(clustersToSubcluster, clustersToSubcluster)
+      #Decide whether to parallelise the runs or functions within the runs, based on how many runs are needed
+      if(length(unique(finalAssignments)) >= BPPARAM$workers){
+        withinRunsBPPARAM = SerialParam(RNGseed = seed)
+      } else (
+        withinRunsBPPARAM = BPPARAM
+        BPPARAM = SerialParam(RNGseed = seed)
+      )
       subassignments = bptry(bplapply(clustersToSubcluster, function(cluster){
         #Subset vars to regress
         newVarsToRegress = as.data.frame(varsToRegress[finalAssignments == cluster, ])
@@ -438,8 +445,11 @@
                               bootSize=bootSize, resRange = resRange, kNum=kNum, mode = mode, variableFeatures=NULL,
                               scale=scale, varsToRegress=newVarsToRegress, regressMethod=regressMethod, depth=depth+1,iterate=T,
                               #sizeFactors = if(length(sizeFactors)>1){sizeFactors[finalAssignments == cluster]}else{sizeFactors},
-                              sizeFactors = "deconvolution", BPPARAM=SerialParam(RNGseed = seed), ...)$assignments
+                              sizeFactors = "deconvolution", BPPARAM=withinRunsBPPARAM, ...)$assignments
       }, BPPARAM=BPPARAM))
+      
+      #Replace errors (from pca not being able to be run in tiny clusters etc.) with lack of clustering
+      subassignments[sapply(subassignments, \(subcluster) length(subcluster) == 2)] = "1"
       
       #Add subcluster annotations
       for (cluster in clustersToSubcluster[sapply(subassignments, \(subclusters) length(unique(subclusters))) > 1]){
@@ -475,7 +485,7 @@
       
     } else if (pval >= alpha) {
       #Else if cluster assignments are no better than chance, then don't return assignments as likely overclustered
-      finalAssignments = rep(1, length(finalAssignments))
+      finalAssignments = rep("1", length(finalAssignments))
       dendrogram = NULL
     } else {
       #If not iterating just compute dendrogram and return assignments
