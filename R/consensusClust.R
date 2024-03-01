@@ -52,7 +52,7 @@
 #' @importFrom bluster neighborsToSNNGraph pairwiseRand approxSilhouette
 #' @importFrom igraph cluster_leiden E
 #' @importFrom irlba prcomp_irlba
-#' @importFrom BiocParallel bplapply SerialParam
+#' @importFrom BiocParallel bplapply SerialParam bptry
 #' @importFrom dbscan kNN
 #' @importFrom RcppXPtrUtils  cppXPtr
 #' @importFrom parallelDist parDist
@@ -430,7 +430,7 @@
     if(all(pval < alpha, iterate)){
       clustersToSubcluster = unique(finalAssignments)[sapply(unique(finalAssignments), \(cluster) sum(finalAssignments == cluster)) > minSize]
       clustersToSubcluster = setNames(clustersToSubcluster, clustersToSubcluster)
-      subassignments = bplapply(clustersToSubcluster, function(cluster){
+      subassignments = bptry(bplapply(clustersToSubcluster, function(cluster){
         #Subset vars to regress
         newVarsToRegress = as.data.frame(varsToRegress[finalAssignments == cluster, ])
         colnames(newVarsToRegress) = colnames(varsToRegress)
@@ -439,7 +439,7 @@
                               scale=scale, varsToRegress=newVarsToRegress, regressMethod=regressMethod, depth=depth+1,iterate=T,
                               #sizeFactors = if(length(sizeFactors)>1){sizeFactors[finalAssignments == cluster]}else{sizeFactors},
                               sizeFactors = "deconvolution", BPPARAM=SerialParam(RNGseed = seed), ...)$assignments
-      }, BPPARAM=BPPARAM)
+      }, BPPARAM=BPPARAM))
       
       #Add subcluster annotations
       for (cluster in clustersToSubcluster[sapply(subassignments, \(subclusters) length(unique(subclusters))) > 1]){
