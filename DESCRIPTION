@@ -26,5 +26,4 @@ biocViews:
     bluster (>= 1.0),
     SummarizedExperiment (>= 1.0),
     SingleCellExperiment (>= 1.0),
-    BiocParallel (>= 1.0),
-    scDesign3
+    BiocParallel (>= 1.0)
