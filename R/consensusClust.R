@@ -59,7 +59,6 @@
 #' @importFrom SummarizedExperiment assay
 #' @importFrom SingleCellExperiment counts SingleCellExperiment
 #' @importFrom MASS fitdistr
-#' @importFrom Seurat VariableFeatures
 #' @importFrom scry devianceFeatureSelection
 #' @importFrom scran getDenoisedPCs modelGeneVarByPoisson
 #' @importFrom transformGamPoi shifted_log_transform
@@ -149,8 +148,8 @@
   #Get Counts and PCA from Seurat or SingleCellExperiment object
   #First Seurat
   if(class(counts)[1]=="Seurat"){
-    if(all(is.null(variableFeatures), !is.null(VariableFeatures(counts)))){
-      variableFeatures = VariableFeatures(counts)
+    if(all(is.null(variableFeatures), !is.null(Seurat::VariableFeatures(counts)))){
+      variableFeatures = Seurat::VariableFeatures(counts)
     } 
     if(!is.null(variableFeatures)){
       if (variableFeatures[1] =="find"){
