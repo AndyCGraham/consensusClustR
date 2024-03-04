@@ -28,8 +28,8 @@ Imports:
     bluster,
     SummarizedExperiment,
     SingleCellExperiment,
-    BiocParallel
-    scran
+    BiocParallel,
+    scran,
     scry
 biocViews:
     bluster (>= 1.0),
