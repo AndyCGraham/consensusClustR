@@ -270,8 +270,8 @@
       normCounts = regressFeatures(normCounts, varsToRegress, regressMethod = regressMethod, BPPARAM = BPPARAM, seed=seed)
       #If this doesn't work well or cluster is very small, use variance explained
       if (any(pcNum == "find", pcNum > 35)) {
-        pca = prcomp_irlba(t(as.matrix(normCounts)), 30, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})
-        pcNum = max(which(sapply(1:30, \(pcNum) sum(pca[["sdev"]][1:pcNum])/ sum(pca[["sdev"]]) ) > 0.25)[1], 5)
+        pca = prcomp_irlba(t(as.matrix(normCounts)), 50, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})
+        pcNum = max(which(sapply(1:50, \(pcNum) sum(pca[["sdev"]][1:pcNum])/ sum(pca[["sdev"]]) ) > 0.3)[1], 5)
         pca = pca$x
         rownames(pca) = colnames(normCounts)
       }
