@@ -24,7 +24,11 @@ Imports:
     MASS (>= 7.0),
     sparseMatrixStats (>= 1.0),
     stringr (>= 1.0),
-    scDesign3
+    scDesign3,
+    bluster,
+    SummarizedExperiment,
+    SingleCellExperiment,
+    BiocParallel
 biocViews:
     bluster (>= 1.0),
     SummarizedExperiment (>= 1.0),
