@@ -466,12 +466,12 @@
                                                                                       paste(cell[1:res], collapse ="_") ) )
                                                                       } else { cell } , rep(NA, maxlen - length(cell))))  
         clustree = as.data.frame(do.call(rbind, clustree))
-        #Fill with previous depth if not subclustered
-        for(depth in 2:ncol(clustree)){
-          clustree[,depth] = coalesce2(clustree[,depth], clustree[,depth-1])
-        }
-        colnames(clustree) = gsub("V", "Cluster", colnames(clustree))
         if(ncol(clustree) > 1){
+          #Fill with previous depth if not subclustered
+          for(depth in 2:ncol(clustree)){
+            clustree[,depth] = coalesce2(clustree[,depth], clustree[,depth-1])
+          }
+          colnames(clustree) = gsub("V", "Cluster", colnames(clustree))
           clustree = clustree(clustree, prefix = "Cluster")
         } else {
           clustree = NULL
