@@ -11,20 +11,19 @@ Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.3
 Imports: 
-    igraph (>= 1.6.0),
-    dbscan (>= 1.1-12),
-    cluster (>= 2.1.0),
-    RcppXPtrUtils (>= 0.1.2),
-    parallelDist (>= 0.2.6),
-    irlba (>= 2.3.5.1),
-    clustree (>= 0.5.1),
-    transformGamPoi (>= 1.6.0),
-    MASS (>= 7.3.60.0.1),
-    sparseMatrixStats (>= 1.12.2),
-    stringr (>= 1.5.1),
-    multtest
+    igraph (>= 1.4),
+    dbscan (>= 1.0),
+    cluster (>= 2.1),
+    RcppXPtrUtils (>= 0.1),
+    parallelDist (>= 0.2),
+    irlba (>= 2.3),
+    clustree (>= 0.5),
+    transformGamPoi (>= 1.0),
+    MASS (>= 7.0),
+    sparseMatrixStats (>= 1.0),
+    stringr (>= 1.0)
 biocViews:
-    bluster (>= 1.10.0),
-    SummarizedExperiment (>= 1.30.0),
-    SingleCellExperiment (>= 1.22.0),
-    BiocParallel (>= 1.34.2)
+    bluster (>= 1.0),
+    SummarizedExperiment (>= 1.0),
+    SingleCellExperiment (>= 1.0),
+    BiocParallel (>= 1.0)
