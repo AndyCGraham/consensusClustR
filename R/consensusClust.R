@@ -655,7 +655,6 @@ Mode <- function(x) {
 }
 
 #' Regress effects from a scRNA-seq matrix
-#' @importFrom glmGamPoi glm_gp
 #' @noRd
 #'
 regressFeatures = function(normCounts, variablesToRegress,regressMethod, BPPARAM, seed){
@@ -684,7 +683,7 @@ regressFeatures = function(normCounts, variablesToRegress,regressMethod, BPPARAM
     #Make formula to regress genes vs variablesToRegress
     fmla <- as.formula(paste(' ~', paste(colnames(variablesToRegress), collapse = '+')))
     
-    residuals(glm_gp(
+    residuals(glmGamPoi::glm_gp(
       as.matrix(normCounts),
       design = fmla,
       col_data = variablesToRegress,
