@@ -21,9 +21,14 @@ Input can be a count matrix, or a Seurat/SingleCellExperiment object from which 
 
 Installation:
 ```
+#Install remotes for installs from github 
 if(!require("remotes")){
   install.packages("remotes")
 }
+#Install a dependency
+remotes::install_github("SONGDONGYUAN1994/scDesign3")
+
+#Install consensusClustR
 remotes::install_github("AndyCGraham/consensusClustR")
 ```
   
