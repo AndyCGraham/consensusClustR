@@ -29,10 +29,14 @@ Imports:
     SummarizedExperiment,
     SingleCellExperiment,
     BiocParallel
+    scran
+    scry
 biocViews:
     bluster (>= 1.0),
     SummarizedExperiment (>= 1.0),
     SingleCellExperiment (>= 1.0),
     BiocParallel (>= 1.0)
+    scran (>= 1.0)
+    scry (>= 1.0)
 Remotes:
     SONGDONGYUAN1994/scDesign3
