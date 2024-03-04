@@ -63,7 +63,7 @@
 #' @importFrom scran getDenoisedPCs modelGeneVarByPoisson
 #' @importFrom transformGamPoi shifted_log_transform
 #' @importFrom scDesign3 construct_data fit_marginal fit_copula extract_para
-#' @importFrom sparseMatrixStats rowMeans2
+#' @importFrom sparseMatrixStats rowMeans2 rowSds
 #' @importFrom stringr str_split
 #' @importFrom clustree clustree
 #' 
