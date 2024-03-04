@@ -372,7 +372,7 @@
     stabilityMat[is.na(stabilityMat)] = 1
     
     #Merge clusters with low stablity in the bootstraps
-    while(min(stabilityMat) < 0.4){
+    while(min(stabilityMat) < 0.2){
       finalAssignments[finalAssignments == max(which(stabilityMat == min(stabilityMat), arr.ind = TRUE))] = 
         unique(finalAssignments[finalAssignments == min(which(stabilityMat == min(stabilityMat), arr.ind = TRUE))])      
       stabilityMat[which(stabilityMat == min(stabilityMat), arr.ind = TRUE)] = 1
