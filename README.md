@@ -21,15 +21,12 @@ Input can be a count matrix, or a Seurat/SingleCellExperiment object from which 
 
 Installation:
 ```
-#Install remotes for installs from github 
-if(!require("remotes")){
-  install.packages("remotes")
+#Install devtools for installs from github 
+if(!require("devtools")){
+  install.packages("devtools")
 }
-#Install a dependency
-remotes::install_github("SONGDONGYUAN1994/scDesign3")
-
 #Install consensusClustR
-remotes::install_github("AndyCGraham/consensusClustR")
+devtools::install_github("AndyCGraham/consensusClustR")
 ```
   
 Example use on a gene by cell scRNA-seq count matrix called counts
