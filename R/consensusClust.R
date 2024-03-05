@@ -574,12 +574,12 @@ determineHierachy <- function(distanceMatrix, assignments, return = "hclust") {
   # Fill the cluster distance matrix with the distances between cluster centroids
   for (clust1 in unique(assignments)) {
     for (clust2 in unique(assignments)[!unique(assignments) == clust1]) {
-      if(clusterDistanceMatrix[clust1, clust2] == 0){
+      if(clusterDistanceMatrix[as.character(clust1), as.character(clust2)] == 0){
         clust1Samples = which(assignments == clust1)
         clust2Samples = which(assignments == clust2)
         dist = mean(distanceMatrix[clust1Samples, clust2Samples], na.rm = T)
-        clusterDistanceMatrix[clust1, clust2] = dist
-        clusterDistanceMatrix[clust2, clust1] = dist
+        clusterDistanceMatrix[as.character(clust1), as.character(clust2)] = dist
+        clusterDistanceMatrix[as.character(clust2), as.character(clust1)] = dist
       }
     }
   }
