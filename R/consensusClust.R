@@ -301,7 +301,7 @@
   pca = pca[,1:pcNum]
   
   #Get cluster assignments for bootstrapped selections of cells
-  clustAssignments = bplapply(1:nboots, \(boot){
+  clustAssignments = bplapply(1:if(nrow(pca) > 1000){nboots}else{2*nboots}, \(boot){
     getClustAssignments( pca[sample(rownames(pca), bootSize*length(rownames(pca)), replace = TRUE),],
                          resRange = resRange, kNum=kNum, clusterFun = clusterFun, cellOrder = rownames(pca), mode = mode, seed=seed)
   }, BPPARAM = BPPARAM )
@@ -375,7 +375,7 @@
     stabilityMat[is.na(stabilityMat)] = 1
     
     #Merge clusters with low stablity in the bootstraps
-    while(min(stabilityMat) < 0.3){
+    while(min(stabilityMat) < 0.4){
       finalAssignments[finalAssignments == max(which(stabilityMat == min(stabilityMat), arr.ind = TRUE))] = 
         unique(finalAssignments[finalAssignments == min(which(stabilityMat == min(stabilityMat), arr.ind = TRUE))])      
       stabilityMat[which(stabilityMat == min(stabilityMat), arr.ind = TRUE)] = 1
