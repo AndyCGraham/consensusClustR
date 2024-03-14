@@ -65,5 +65,5 @@ Idents(data) = data$consensusClusts
 plot(results$clusterDendogram)
 
 #Show the clustree representation of subcluster-parent cluster relationships
-restults$clustree
+results$clustree
 ```
