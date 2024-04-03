@@ -438,7 +438,7 @@
         withinRunsBPPARAM = BPPARAM
         BPPARAM = SerialParam(RNGseed = seed)
       }
-      subassignments = bptry(bplapply(clustersToSubcluster, function(cluster){
+      subassignments = bplapply(clustersToSubcluster, function(cluster){
         #Subset vars to regress
         newVarsToRegress = as.data.frame(varsToRegress[finalAssignments == cluster, ])
         colnames(newVarsToRegress) = colnames(varsToRegress)
@@ -447,7 +447,7 @@
                               scale=scale, varsToRegress=newVarsToRegress, regressMethod=regressMethod, depth=depth+1,iterate=T,
                               #sizeFactors = if(length(sizeFactors)>1){sizeFactors[finalAssignments == cluster]}else{sizeFactors},
                               sizeFactors = "deconvolution", BPPARAM=withinRunsBPPARAM, ...)$assignments
-      }, BPPARAM=BPPARAM))
+      }, BPPARAM=BPPARAM)
       
       #Replace errors (from pca not being able to be run in tiny clusters etc.) with lack of clustering
       subassignments[sapply(subassignments, \(subcluster) length(subcluster) == 2)] = "1"
