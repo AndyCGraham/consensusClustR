@@ -369,16 +369,17 @@
     compare <- function(...) pairwiseRand(..., mode="ratio", adjusted=TRUE)
     collated = lapply(1:ncol(clustAssignments), \(boot) 
                       compare(finalAssignments[clustAssignments[,boot] != -1], clustAssignments[,boot][clustAssignments[,boot] != -1]))
-    stabilityMat = apply(simplify2array(collated), 2, rowMeans2, na.rm = TRUE) #Reduce("+", stabilityMat) / length(stabilityMat)
+    stabilityMat = apply(simplify2array(collated), 2, rowMeans2, na.rm = TRUE) 
     diag(stabilityMat) = 1
     dimnames(stabilityMat) = list(unique(finalAssignments), unique(finalAssignments))
     stabilityMat[is.na(stabilityMat)] = 1
     
     #Merge clusters with low stablity in the bootstraps
     while(min(stabilityMat) < 0.4){
-      finalAssignments[finalAssignments == max(which(stabilityMat == min(stabilityMat), arr.ind = TRUE))] = 
-        unique(finalAssignments[finalAssignments == min(which(stabilityMat == min(stabilityMat), arr.ind = TRUE))])      
-      stabilityMat[which(stabilityMat == min(stabilityMat), arr.ind = TRUE)] = 1
+      clustersToMerge = as.numeric(which(stabilityMat == min(stabilityMat), arr.ind = TRUE))
+      finalAssignments[finalAssignments == clustersToMerge[2]] = clustersToMerge[1]  
+      stabilityMat[clustersToMerge[1],clustersToMerge[2]] = 1
+      stabilityMat[clustersToMerge[2],clustersToMerge[1]] = 1
     }
     
     #Merge clusters so small it's hard to assess their seperation to the nearest cluster
