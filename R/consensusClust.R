@@ -236,7 +236,7 @@
     #     sizeFactors <- sizeFactors/exp(mean(log(sizeFactors)))
     #   }
     # }
-    normCounts = shifted_log_transform(counts, size_factors = sizeFactors)  
+    normCounts = shifted_log_transform(counts, size_factors = sizeFactors, pseudo_count = 1e-16)  
   }
   
   #Find variable features if required
@@ -625,7 +625,7 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale,
       important_feature = my_copula$important_feature,
       filtered_gene = my_data$filtered_gene
     )
-  null = shifted_log_transform(null, size_factors = "deconvolution")
+  null = shifted_log_transform(null, size_factors = "deconvolution", pseudo_count = 1e-16)
   null = regressFeatures(null, varsToRegress, regressMethod = regressMethod, BPPARAM = SerialParam(RNGseed = seed), seed=seed)
   
   pcaNull = tryCatch(
