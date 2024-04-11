@@ -224,18 +224,18 @@
   
   #Normalise counts if not provided
   if(!exists("normCounts")){
-    # if(sizeFactors[1]=="deconvolution"){
-    #   sizeFactors = calculateSumFactors(counts, BPPARAM = BPPARAM)
-    #   # stabilize size factors to have geometric mean of 1
-    #   zeroSFs = any(is.nan(sizeFactors) | sizeFactors <= 0)
-    #   sizeFactors[zeroSFs] <- NA
-    #   if(zeroSFs){
-    #     sizeFactors <- sizeFactors/exp(mean(log(sizeFactors), na.rm=TRUE))
-    #     sizeFactors[zeroSFs] <- 0.001
-    #   }else{
-    #     sizeFactors <- sizeFactors/exp(mean(log(sizeFactors)))
-    #   }
-    # }
+    if(sizeFactors[1]=="deconvolution"){
+      sizeFactors = calculateSumFactors(counts, BPPARAM = BPPARAM)
+      # stabilize size factors to have geometric mean of 1
+      zeroSFs = any(is.nan(sizeFactors) | sizeFactors <= 0)
+      sizeFactors[zeroSFs] <- NA
+      if(zeroSFs){
+        sizeFactors <- sizeFactors/exp(mean(log(sizeFactors), na.rm=TRUE))
+        sizeFactors[zeroSFs] <- 0.001
+      }else{
+        sizeFactors <- sizeFactors/exp(mean(log(sizeFactors)))
+      }
+    }
     normCounts = shifted_log_transform(counts, size_factors = sizeFactors, pseudo_count = 1)  
   }
   
@@ -263,7 +263,7 @@
       #Estmate pcNum with getDenoisedPCs for large clusters
       if(ncol(counts) > 400){
         #Model gene variance before regression
-        var.stats <- modelGeneVarByPoisson(counts[variableFeaturesCounts,], design=varsToRegress)
+        var.stats <- modelGeneVarByPoisson(counts[variableFeaturesCounts,], design=varsToRegress, size.factors=sizeFactors, pseudo_count=1)
         pcNum = ncol(getDenoisedPCs(normCounts, var.stats, subset.row=NULL)$components)
       } 
       #Regress out unwanted effects
@@ -278,7 +278,7 @@
     }
   } else if(pcNum == "find"){ #Else just find pcNum if desired
     #Model gene variance
-    var.stats <- modelGeneVarByPoisson(counts[variableFeaturesCounts,])
+    var.stats <- modelGeneVarByPoisson(counts[variableFeaturesCounts,], size_factors = sizeFactors, pseudo_count = 1)
     pcNum = ncol(getDenoisedPCs(normCounts, var.stats, subset.row=NULL)$components)
   }
   
