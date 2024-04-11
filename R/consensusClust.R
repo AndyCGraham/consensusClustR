@@ -60,7 +60,7 @@
 #' @importFrom SingleCellExperiment counts SingleCellExperiment
 #' @importFrom MASS fitdistr
 #' @importFrom scry devianceFeatureSelection
-#' @importFrom scran getDenoisedPCs modelGeneVarByPoisson
+#' @importFrom scran getDenoisedPCs modelGeneVarByPoisson calculateSumFactors
 #' @importFrom transformGamPoi shifted_log_transform
 #' @importFrom scDesign3 construct_data fit_marginal fit_copula extract_para
 #' @importFrom sparseMatrixStats rowMeans2 rowSds
