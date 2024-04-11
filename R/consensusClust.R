@@ -446,7 +446,6 @@
         consensusClust(counts[,finalAssignments == cluster], pcaMethod=pcaMethod, nboots=nboots, clusterFun=clusterFun,
                               bootSize=bootSize, resRange = resRange, kNum=kNum, mode = mode, variableFeatures=NULL,
                               scale=scale, varsToRegress=newVarsToRegress, regressMethod=regressMethod, depth=depth+1,iterate=T,
-                              #sizeFactors = if(length(sizeFactors)>1){sizeFactors[finalAssignments == cluster]}else{sizeFactors},
                               sizeFactors = "deconvolution", BPPARAM=withinRunsBPPARAM, ...)$assignments
       }, BPPARAM=BPPARAM)
       
