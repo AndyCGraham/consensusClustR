@@ -236,7 +236,7 @@
     #     sizeFactors <- sizeFactors/exp(mean(log(sizeFactors)))
     #   }
     # }
-    normCounts = shifted_log_transform(counts, size_factors = sizeFactors, pseudo_count = 1e-16)  
+    normCounts = shifted_log_transform(counts, size_factors = sizeFactors, pseudo_count = 1)  
   }
   
   #Find variable features if required
@@ -263,7 +263,7 @@
       #Estmate pcNum with getDenoisedPCs for large clusters
       if(ncol(counts) > 400){
         #Model gene variance before regression
-        var.stats <- modelGeneVarByPoisson(normCounts, design=varsToRegress)
+        var.stats <- modelGeneVarByPoisson(counts[variableFeaturesCounts,], design=varsToRegress)
         pcNum = ncol(getDenoisedPCs(normCounts, var.stats, subset.row=NULL)$components)
       } 
       #Regress out unwanted effects
@@ -278,7 +278,7 @@
     }
   } else if(pcNum == "find"){ #Else just find pcNum if desired
     #Model gene variance
-    var.stats <- modelGeneVarByPoisson(normCounts)
+    var.stats <- modelGeneVarByPoisson(counts[variableFeaturesCounts,])
     pcNum = ncol(getDenoisedPCs(normCounts, var.stats, subset.row=NULL)$components)
   }
   
@@ -625,7 +625,7 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale,
       important_feature = my_copula$important_feature,
       filtered_gene = my_data$filtered_gene
     )
-  null = shifted_log_transform(null, size_factors = "deconvolution", pseudo_count = 1e-16)
+  null = shifted_log_transform(null, size_factors = "deconvolution", pseudo_count = 1)
   null = regressFeatures(null, varsToRegress, regressMethod = regressMethod, BPPARAM = SerialParam(RNGseed = seed), seed=seed)
   
   pcaNull = tryCatch(
