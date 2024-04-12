@@ -263,7 +263,7 @@
       #Estmate pcNum with getDenoisedPCs for large clusters
       if(ncol(counts) > 400){
         #Model gene variance before regression
-        var.stats <- modelGeneVarByPoisson(counts[variableFeaturesCounts,], design=varsToRegress, size.factors=sizeFactors, pseudo_count=1)
+        var.stats <- modelGeneVarByPoisson(counts[variableFeaturesCounts,], design=varsToRegress, size.factors=sizeFactors)
         pcNum = ncol(getDenoisedPCs(normCounts, var.stats, subset.row=NULL)$components)
       } 
       #Regress out unwanted effects
@@ -278,7 +278,7 @@
     }
   } else if(pcNum == "find"){ #Else just find pcNum if desired
     #Model gene variance
-    var.stats <- modelGeneVarByPoisson(counts[variableFeaturesCounts,], size_factors = sizeFactors, pseudo_count = 1)
+    var.stats <- modelGeneVarByPoisson(counts[variableFeaturesCounts,], size_factors = sizeFactors)
     pcNum = ncol(getDenoisedPCs(normCounts, var.stats, subset.row=NULL)$components)
   }
   
