@@ -446,7 +446,7 @@
         consensusClust(counts[,finalAssignments == cluster], pcaMethod=pcaMethod, nboots=nboots, clusterFun=clusterFun,
                               bootSize=bootSize, resRange = resRange, kNum=kNum, mode = mode, variableFeatures=NULL,
                               scale=scale, varsToRegress=newVarsToRegress, regressMethod=regressMethod, depth=depth+1,iterate=T,
-                              sizeFactors = sizeFactors[], BPPARAM=withinRunsBPPARAM, ...)$assignments
+                              sizeFactors = sizeFactors[finalAssignments == cluster], BPPARAM=withinRunsBPPARAM, ...)$assignments
       }, BPPARAM=BPPARAM)
       
       #Replace errors (from pca not being able to be run in tiny clusters etc.) with lack of clustering
