@@ -223,21 +223,21 @@
   }
   
   #Normalise counts if not provided
-  if(!exists("normCounts")){
-    if(sizeFactors[1]=="deconvolution"){
-      sizeFactors = calculateSumFactors(counts, BPPARAM = BPPARAM)
+  if(sizeFactors[1]=="deconvolution"){
+    sizeFactors = calculateSumFactors(counts, BPPARAM = BPPARAM)
       # stabilize size factors to have geometric mean of 1
       zeroSFs = any(is.nan(sizeFactors) | sizeFactors <= 0)
       sizeFactors[zeroSFs] <- NA
       if(zeroSFs){
         sizeFactors <- sizeFactors/exp(mean(log(sizeFactors), na.rm=TRUE))
         sizeFactors[zeroSFs] <- 0.001
-      }else{
+        }else{
         sizeFactors <- sizeFactors/exp(mean(log(sizeFactors)))
+        }
       }
-    }
+  if(!exists("normCounts")){
     normCounts = shifted_log_transform(counts, size_factors = sizeFactors, pseudo_count = 1)  
-  }
+    }
   
   #Find variable features if required
   if(is.null(variableFeatures)){
@@ -443,10 +443,11 @@
         #Subset vars to regress
         newVarsToRegress = as.data.frame(varsToRegress[finalAssignments == cluster, ])
         colnames(newVarsToRegress) = colnames(varsToRegress)
+        sizeFactors = sizeFactors[finalAssignments == cluster]
         consensusClust(counts[,finalAssignments == cluster], pcaMethod=pcaMethod, nboots=nboots, clusterFun=clusterFun,
                               bootSize=bootSize, resRange = resRange, kNum=kNum, mode = mode, variableFeatures=NULL,
                               scale=scale, varsToRegress=newVarsToRegress, regressMethod=regressMethod, depth=depth+1,iterate=T,
-                              sizeFactors = sizeFactors[finalAssignments == cluster], BPPARAM=withinRunsBPPARAM, ...)$assignments
+                              sizeFactors = sizeFactors, BPPARAM=withinRunsBPPARAM, ...)$assignments
       }, BPPARAM=BPPARAM)
       
       #Replace errors (from pca not being able to be run in tiny clusters etc.) with lack of clustering
