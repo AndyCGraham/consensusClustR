@@ -260,18 +260,18 @@
   }
   if(!all(colnames(varsToRegress) %in% skipFirstRegression)){
     if(pcNum == "find"){
+      #Regress out unwanted effects
+      normCounts = regressFeatures(normCounts, varsToRegress, regressMethod = regressMethod, BPPARAM = BPPARAM, seed=seed)
       #Estmate pcNum with getDenoisedPCs for large clusters
       if(ncol(counts) > 400){
         #Model gene variance before regression
-        var.stats <- modelGeneVarByPoisson(counts[variableFeaturesCounts,], design=varsToRegress, size.factors=sizeFactors)
+        var.stats <- modelGeneVarByPoisson(counts, design=varsToRegress, size.factors=sizeFactors, subset.row=variableFeaturesCounts)
         pcNum = ncol(getDenoisedPCs(normCounts, var.stats, subset.row=NULL)$components)
       } 
-      #Regress out unwanted effects
-      normCounts = regressFeatures(normCounts, varsToRegress, regressMethod = regressMethod, BPPARAM = BPPARAM, seed=seed)
       #If this doesn't work well or cluster is very small, use variance explained
-      if (any(pcNum == "find", pcNum > 35)) {
+      if (any(pcNum == "find", pcNum > 30)) {
         pca = prcomp_irlba(t(as.matrix(normCounts)), 50, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})
-        pcNum = max(which(sapply(1:50, \(pcNum) sum(pca[["sdev"]][1:pcNum])/ sum(pca[["sdev"]]) ) > 0.3)[1], 5)
+        pcNum = max(which(sapply(1:50, \(pcNum) sum(pca[["sdev"]][1:pcNum])/ sum(pca[["sdev"]]) ) > 0.15)[1], 5)
         pca = pca$x
         rownames(pca) = colnames(normCounts)
       }
@@ -301,7 +301,7 @@
   pca = pca[,1:pcNum]
   
   #Get cluster assignments for bootstrapped selections of cells
-  clustAssignments = bplapply(1:if(nrow(pca) > 1000){nboots}else{2*nboots}, \(boot){
+  clustAssignments = bplapply(1:nboots, \(boot){
     getClustAssignments( pca[sample(rownames(pca), bootSize*length(rownames(pca)), replace = TRUE),],
                          resRange = resRange, kNum=kNum, clusterFun = clusterFun, cellOrder = rownames(pca), mode = mode, seed=seed)
   }, BPPARAM = BPPARAM )
@@ -319,7 +319,7 @@
   clustAssignments[is.na(clustAssignments)] = -1
   
   #Function to compute jaccard similarity between non-binary sets (ignoring -1s), implemented in C++
-  jaccardDist <- cppXPtr("double customDist(const arma::mat &A, const arma::mat &B) { 
+  jaccardDist = cppXPtr("double customDist(const arma::mat &A, const arma::mat &B) { 
                               float overlap, U;
                               double jaccard;
                               overlap = arma::accu((A == B) && (A != -1));
