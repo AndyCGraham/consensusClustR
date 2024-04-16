@@ -259,9 +259,10 @@
     }
   }
   if(!all(colnames(varsToRegress) %in% skipFirstRegression)){
+    #Regress out unwanted effects
+    normCounts = regressFeatures(normCounts, varsToRegress, regressMethod = regressMethod, BPPARAM = BPPARAM, seed=seed)
+    
     if(pcNum == "find"){
-      #Regress out unwanted effects
-      normCounts = regressFeatures(normCounts, varsToRegress, regressMethod = regressMethod, BPPARAM = BPPARAM, seed=seed)
       #Estmate pcNum with getDenoisedPCs for large clusters
       if(ncol(counts) > 400){
         #Model gene variance before regression
@@ -271,14 +272,14 @@
       #If this doesn't work well or cluster is very small, use variance explained
       if (any(pcNum == "find", pcNum > 30)) {
         pca = prcomp_irlba(t(as.matrix(normCounts)), 50, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})
-        pcNum = max(which(sapply(1:50, \(pcNum) sum(pca[["sdev"]][1:pcNum])/ sum(pca[["sdev"]]) ) > 0.15)[1], 5)
+        pcNum = max(which(sapply(1:50, \(pcNum) sum(pca[["sdev"]][1:pcNum])/ sum(pca[["sdev"]]) ) > 0.1)[1], 5)
         pca = pca$x
         rownames(pca) = colnames(normCounts)
       }
     }
   } else if(pcNum == "find"){ #Else just find pcNum if desired
     #Model gene variance
-    var.stats <- modelGeneVarByPoisson(counts[variableFeaturesCounts,], size_factors = sizeFactors)
+    var.stats <- modelGeneVarByPoisson(counts, size_factors = sizeFactors, subset.row=variableFeaturesCounts)
     pcNum = ncol(getDenoisedPCs(normCounts, var.stats, subset.row=NULL)$components)
   }
   
