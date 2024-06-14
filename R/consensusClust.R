@@ -279,7 +279,7 @@
     }
   } else if(pcNum == "find"){ #Else just find pcNum if desired
     #Model gene variance
-    var.stats <- modelGeneVarByPoisson(counts, size_factors = sizeFactors, subset.row=variableFeaturesCounts)
+    var.stats <- modelGeneVarByPoisson(counts, size.factors = sizeFactors, subset.row=variableFeaturesCounts)
     pcNum = ncol(getDenoisedPCs(normCounts, var.stats, subset.row=NULL)$components)
   }
   
