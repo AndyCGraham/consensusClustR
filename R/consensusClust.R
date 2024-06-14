@@ -287,7 +287,7 @@
   if(is.null(pca)){
     pca = tryCatch(
       {
-        prcomp_irlba(t(normCounts), pcNum, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})$x
+        prcomp_irlba(t(as.matrix(normCounts)), pcNum, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})$x
       },
       error = function(e) {
         NA
