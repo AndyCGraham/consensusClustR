@@ -279,24 +279,29 @@
     }
   } else if(pcNum == "find"){ #Else just find pcNum if desired
     #Model gene variance
-    var.stats <- modelGeneVarByPoisson(counts, size.factors = sizeFactors, subset.row=variableFeaturesCounts)
-    pcNum = ncol(getDenoisedPCs(normCounts, var.stats, subset.row=NULL)$components)
-  }
-  
-  #Compute PCA if not extracted from an input Seurat or SCE object
-  if(is.null(pca)){
-    pca = tryCatch(
-      {
-        prcomp_irlba(t(as.matrix(normCounts)), pcNum, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})$x
-      },
-      error = function(e) {
-        NA
-      } )
-    if(all(is.na(pca))){
-      return(list(assignments = rep("1", ncol(normCounts)), clusterDendrogram = NULL, clustree=NULL))
+    if (ncol(counts) > 400) {
+      var.stats <- modelGeneVarByPoisson(counts, size.factors = sizeFactors, subset.row=variableFeaturesCounts)
+      pcNum = ncol(getDenoisedPCs(normCounts, var.stats, subset.row=NULL)$components)
     }
-    rownames(pca) = colnames(normCounts)
-  } 
+    if (any(pcNum == "find", pcNum > 30)) {
+      pca = prcomp_irlba(t(as.matrix(normCounts)), 
+                         50, scale = if (center) {
+                           rowSds(normCounts)
+                         }
+                         else {
+                           NULL
+                         }, center = if (center) {
+                           rowMeans2(normCounts)
+                         }
+                         else {
+                           NULL
+                         })
+      pcNum = max(which(sapply(1:50, function(pcNum) sum(pca[["sdev"]][1:pcNum])/sum(pca[["sdev"]])) > 
+                          0.1)[1], 5)
+      pca = pca$x
+      rownames(pca) = colnames(normCounts)
+    }
+  }
   
   #Restrict pca to chosen features if given
   pca = pca[,1:pcNum]
