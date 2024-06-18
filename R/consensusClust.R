@@ -406,11 +406,16 @@
       
       #Make SCE object of variable features, and model paramters of these features, assuming they come from one distribution, with scDesign3
       sce = SingleCellExperiment(assays=list(counts = counts[variableFeaturesCounts, ]))
-      colData(sce) = cbind( colData(sce), finalAssignments, varsToRegress)
+      if(!is.null(varsToRegress)){
+        colData(sce) = cbind( colData(sce), finalAssignments, varsToRegress)
+      } else {
+        colData(sce) = cbind( colData(sce), finalAssignments)
+      }
+      
       colData(sce)$single = rep(1)
       
       data <- construct_data(sce = sce, assay_use = "counts", celltype = "single", pseudotime = NULL, spatial = NULL, 
-                             other_covariates = "logUMI", corr_by = "1")
+                             other_covariates = colnames(varsToRegress), corr_by = "1")
       marginals <- fit_marginal(data = data, mu_formula = "1", sigma_formula = "1", family_use = "poisson", usebam = T, n_cores = 1)
       copula <- fit_copula(sce = sce, assay_use = "counts", marginal_list = marginals, family_use = "poisson", copula = "gaussian",
           n_cores = 1, input_data = data$dat)
@@ -422,7 +427,7 @@
       nullDist = unlist(bplapply(1:20, function(i) {
         generateNullStatistic(sce, params, data, copula, pcNum=pcNum, varsToRegress = varsToRegress,regressMethod = regressMethod, 
                               scale=scale, center = center, kNum=kNum, clusterFun = clusterFun, seed=seed)
-      }, BPPARAM = BPPARAM))
+      }, BPPARAM = BPPARAM)) 
       
       # Test the statistical signifcance of the difference in silhouette scores between the NULL and real clusterings - are your clusters
       # significantly better connected than those geneerated if we assume the data is truly from a single population?
@@ -632,7 +637,9 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale,
       filtered_gene = my_data$filtered_gene
     )
   null = shifted_log_transform(null, size_factors = "deconvolution", pseudo_count = 1)
-  null = regressFeatures(null, varsToRegress, regressMethod = regressMethod, BPPARAM = SerialParam(RNGseed = seed), seed=seed)
+  if(!is.null(varsToRegress)){
+    null = regressFeatures(null, varsToRegress, regressMethod = regressMethod, BPPARAM = SerialParam(RNGseed = seed), seed=seed)
+  }
   
   pcaNull = tryCatch(
     {
