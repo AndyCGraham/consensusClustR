@@ -451,8 +451,10 @@
         BPPARAM = SerialParam(RNGseed = seed)
       }
       subassignments = bplapply(clustersToSubcluster, function(cluster){
-        #Subset vars to regress
-        newVarsToRegress = as.data.frame(varsToRegress[finalAssignments == cluster, ])
+        if(!is.null(varsToRegress)){
+          #Subset vars to regress
+          newVarsToRegress = as.data.frame(varsToRegress[finalAssignments == cluster, ])
+        } 
         colnames(newVarsToRegress) = colnames(varsToRegress)
         sizeFactors = sizeFactors[finalAssignments == cluster]
         consensusClust(counts[,finalAssignments == cluster], pcaMethod=pcaMethod, nboots=nboots, clusterFun=clusterFun,
