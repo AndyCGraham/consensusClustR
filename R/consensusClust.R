@@ -454,7 +454,9 @@
         if(!is.null(varsToRegress)){
           #Subset vars to regress
           newVarsToRegress = as.data.frame(varsToRegress[finalAssignments == cluster, ])
-        } 
+        } else {
+          newVarsToRegress = NULL
+        }
         colnames(newVarsToRegress) = colnames(varsToRegress)
         sizeFactors = sizeFactors[finalAssignments == cluster]
         consensusClust(counts[,finalAssignments == cluster], pcaMethod=pcaMethod, nboots=nboots, clusterFun=clusterFun,
