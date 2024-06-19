@@ -460,7 +460,8 @@
         colnames(newVarsToRegress) = colnames(varsToRegress)
         sizeFactors = sizeFactors[finalAssignments == cluster]
         consensusClust(counts[,finalAssignments == cluster], pcaMethod=pcaMethod, nboots=nboots, clusterFun=clusterFun,
-                              bootSize=bootSize, resRange = resRange, kNum=kNum, mode = mode, variableFeatures=NULL,
+                              bootSize=bootSize, resRange = resRange, kNum=if(sum(finalAssignments == cluster)>400){kNum}else{15}, 
+                                                                              mode = mode, variableFeatures=NULL,
                               scale=scale, varsToRegress=newVarsToRegress, regressMethod=regressMethod, depth=depth+1,iterate=T,
                               sizeFactors = "deconvolution", BPPARAM=withinRunsBPPARAM, ...)$assignments
       }, BPPARAM=BPPARAM)
