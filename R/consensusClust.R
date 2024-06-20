@@ -297,7 +297,7 @@
                            NULL
                          })
       pcNum = max(which(sapply(1:50, function(pcNum) sum(pca[["sdev"]][1:pcNum])/sum(pca[["sdev"]])) > 
-                          0.1)[1], 5)
+                          0.2)[1], 5)
       pca = pca$x
       rownames(pca) = colnames(normCounts)
     }
@@ -376,7 +376,7 @@
     collated = lapply(1:ncol(clustAssignments), \(boot) 
                       compare(finalAssignments[clustAssignments[,boot] != -1], clustAssignments[,boot][clustAssignments[,boot] != -1]))
     stabilityMat = apply(simplify2array(collated), 2, rowMeans2, na.rm = TRUE) 
-    diag(stabilityMat) = 1
+    #diag(stabilityMat) = 1
     dimnames(stabilityMat) = list(unique(finalAssignments), unique(finalAssignments))
     stabilityMat[is.na(stabilityMat)] = 1
     
