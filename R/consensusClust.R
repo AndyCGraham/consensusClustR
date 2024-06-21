@@ -417,10 +417,10 @@
       
       data <- construct_data(sce = sce, assay_use = "counts", celltype = "cell_type", pseudotime = NULL, spatial = NULL, 
                              other_covariates = colnames(varsToRegress), corr_by = "1")
-      marginals <- fit_marginal(data = data, mu_formula = "1", sigma_formula = "1", family_use = "poisson", usebam = T, n_cores = 1)
-      copula <- fit_copula(sce = sce, assay_use = "counts", marginal_list = marginals, family_use = "poisson", copula = "gaussian",
+      marginals <- fit_marginal(data = data, mu_formula = paste0("1+",colnames(varsToRegress)), , sigma_formula = "1", family_use = "nb", usebam = T, n_cores = 1)
+      copula <- fit_copula(sce = sce, assay_use = "counts", marginal_list = marginals, family_use = "nb", copula = "gaussian",
           n_cores = 1, input_data = data$dat)
-      params <- extract_para(sce = sce, marginal_list = marginals, family_use = "poisson", new_covariate = data$newCovariate,
+      params <- extract_para(sce = sce, marginal_list = marginals, family_use = "nb", new_covariate = data$newCovariate,
             data = data$dat, n_cores = 1)
       
       # Generate null distribution for Silhouette score based on simulating a new dataset based on these single population paramters, 
@@ -433,7 +433,7 @@
       # Test the statistical signifcance of the difference in silhouette scores between the NULL and real clusterings - are your clusters
       # significantly better connected than those geneerated if we assume the data is truly from a single population?
       fit <- fitdistr(nullDist,'normal')
-      pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
+      pval <- pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
   
     } else {
       #If silhouette score is below the threshold, we can save time by assuming these clusters are real - adjust threshold to avoid this 
@@ -500,6 +500,7 @@
       }
       
     } else if (pval >= alpha) {
+      message("Failed Test")
       #Else if cluster assignments are no better than chance, then don't return assignments as likely overclustered
       finalAssignments = rep("1", length(finalAssignments))
       dendrogram = NULL
@@ -633,7 +634,7 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale,
       n_cores = 1,
       fastmvn=F,
       nonzerovar=T,
-      family_use = "poisson",
+      family_use = "nb",
       input_data = my_data$dat,
       new_covariate = my_data$newCovariate,
       important_feature = my_copula$important_feature,
@@ -641,7 +642,9 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale,
     )
   null = shifted_log_transform(null, size_factors = "deconvolution", pseudo_count = 1)
   if(!is.null(varsToRegress)){
-    null = regressFeatures(null, varsToRegress, regressMethod = regressMethod, BPPARAM = SerialParam(RNGseed = seed), seed=seed)
+    varsToRegress[1:nrow(varsToRegress), 1:ncol(varsToRegress)] = as.data.frame(colData(sce)[,colnames(colData(sce)) %in% colnames(varsToRegress)])[1:nrow(varsToRegress), 1:ncol(varsToRegress)] 
+    null = regressFeatures(null, varsToRegress, 
+                           regressMethod = regressMethod, BPPARAM = SerialParam(RNGseed = seed), seed=seed)
   }
   
   pcaNull = tryCatch(
@@ -660,11 +663,12 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale,
   
   assignments = getClustAssignments( pcaNull, cellOrder = rownames(pcaNull), resRange = seq.int(0.01, 3, length.out = 30), seed=seed, ...)
   
-  sil = if(all(length(unique(assignments)) > 1, min(table(assignments)) > 15, length(unique(assignments)) < length(assignments)/5 )){
-    mean(approxSilhouette(pcaNull, assignments)[,3], na.rm = T)
-  } else {
-    0
-  }
+  #sil = if(all(length(unique(assignments)) > 1, min(table(assignments)) > 15, length(unique(assignments)) < length(assignments)/5 )){
+  #  mean(approxSilhouette(pcaNull, assignments)[,3], na.rm = T)
+  #} else {
+  #  0
+  #}
+  sil=calc2CI(pcaNull[assignments == 1,], pcaNull[assignments == 2,])
     
   return(sil)
 }
