@@ -114,7 +114,7 @@
                                     regressMethod = "lm", skipFirstRegression=F, nboots=100, bootSize=0.9, 
                                   clusterFun="leiden", resRange = c(0.01, 0.03, 0.05, 0.07, 0.10, seq.int(0.11, 1.5, length.out=10)),
                                   kNum=30, silhouetteThresh = 0.4, minSize = 50, assay="RNA", mode = "robust", 
-                                  BPPARAM=SerialParam(RNGseed = seed), seed=123, depth=1, ...) {
+                                  BPPARAM=SerialParam(RNGseed = seed), seed=123, depth=1, minStability=0.25, ...) {
   
   #Check inputs are correct
   stopifnot("`counts` must be a matrix, sparse matrix of type dgCMatrix, seurat object, or single-cell experiment object." = 
@@ -223,21 +223,21 @@
   }
   
   #Normalise counts if not provided
-  if(!exists("normCounts")){
-    if(sizeFactors[1]=="deconvolution"){
-      sizeFactors = calculateSumFactors(counts, BPPARAM = BPPARAM)
+  if(sizeFactors[1]=="deconvolution"){
+    sizeFactors = calculateSumFactors(counts, BPPARAM = BPPARAM)
       # stabilize size factors to have geometric mean of 1
       zeroSFs = any(is.nan(sizeFactors) | sizeFactors <= 0)
       sizeFactors[zeroSFs] <- NA
       if(zeroSFs){
         sizeFactors <- sizeFactors/exp(mean(log(sizeFactors), na.rm=TRUE))
         sizeFactors[zeroSFs] <- 0.001
-      }else{
+        }else{
         sizeFactors <- sizeFactors/exp(mean(log(sizeFactors)))
+        }
       }
-    }
+  if(!exists("normCounts")){
     normCounts = shifted_log_transform(counts, size_factors = sizeFactors, pseudo_count = 1)  
-  }
+    }
   
   #Find variable features if required
   if(is.null(variableFeatures)){
@@ -259,49 +259,55 @@
     }
   }
   if(!all(colnames(varsToRegress) %in% skipFirstRegression)){
+    #Regress out unwanted effects
+    normCounts = regressFeatures(normCounts, varsToRegress, regressMethod = regressMethod, BPPARAM = BPPARAM, seed=seed)
+    
     if(pcNum == "find"){
       #Estmate pcNum with getDenoisedPCs for large clusters
       if(ncol(counts) > 400){
         #Model gene variance before regression
-        var.stats <- modelGeneVarByPoisson(counts[variableFeaturesCounts,], design=varsToRegress, size.factors=sizeFactors)
+        var.stats <- modelGeneVarByPoisson(counts, design=varsToRegress, size.factors=sizeFactors, subset.row=variableFeaturesCounts)
         pcNum = ncol(getDenoisedPCs(normCounts, var.stats, subset.row=NULL)$components)
       } 
-      #Regress out unwanted effects
-      normCounts = regressFeatures(normCounts, varsToRegress, regressMethod = regressMethod, BPPARAM = BPPARAM, seed=seed)
       #If this doesn't work well or cluster is very small, use variance explained
-      if (any(pcNum == "find", pcNum > 35)) {
+      if (any(pcNum == "find", pcNum > 30)) {
         pca = prcomp_irlba(t(as.matrix(normCounts)), 50, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})
-        pcNum = max(which(sapply(1:50, \(pcNum) sum(pca[["sdev"]][1:pcNum])/ sum(pca[["sdev"]]) ) > 0.35)[1], 5)
+        pcNum = max(which(sapply(1:50, \(pcNum) sum(pca[["sdev"]][1:pcNum])/ sum(pca[["sdev"]]) ) > 0.1)[1], 5)
         pca = pca$x
         rownames(pca) = colnames(normCounts)
       }
     }
   } else if(pcNum == "find"){ #Else just find pcNum if desired
     #Model gene variance
-    var.stats <- modelGeneVarByPoisson(counts[variableFeaturesCounts,], size_factors = sizeFactors)
-    pcNum = ncol(getDenoisedPCs(normCounts, var.stats, subset.row=NULL)$components)
-  }
-  
-  #Compute PCA if not extracted from an input Seurat or SCE object
-  if(is.null(pca)){
-    pca = tryCatch(
-      {
-        prcomp_irlba(t(normCounts), pcNum, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})$x
-      },
-      error = function(e) {
-        NA
-      } )
-    if(all(is.na(pca))){
-      return(list(assignments = rep("1", ncol(normCounts)), clusterDendrogram = NULL, clustree=NULL))
+    if (ncol(counts) > 400) {
+      var.stats <- modelGeneVarByPoisson(counts, size.factors = sizeFactors, subset.row=variableFeaturesCounts)
+      pcNum = ncol(getDenoisedPCs(normCounts, var.stats, subset.row=NULL)$components)
     }
-    rownames(pca) = colnames(normCounts)
-  } 
+    if (any(pcNum == "find", pcNum > 30)) {
+      pca = prcomp_irlba(t(as.matrix(normCounts)), 
+                         50, scale = if (center) {
+                           rowSds(normCounts)
+                         }
+                         else {
+                           NULL
+                         }, center = if (center) {
+                           rowMeans2(normCounts)
+                         }
+                         else {
+                           NULL
+                         })
+      pcNum = max(which(sapply(1:50, function(pcNum) sum(pca[["sdev"]][1:pcNum])/sum(pca[["sdev"]])) > 
+                          0.1)[1], 5)
+      pca = pca$x
+      rownames(pca) = colnames(normCounts)
+    }
+  }
   
   #Restrict pca to chosen features if given
   pca = pca[,1:pcNum]
   
   #Get cluster assignments for bootstrapped selections of cells
-  clustAssignments = bplapply(1:if(nrow(pca) > 1000){nboots}else{2*nboots}, \(boot){
+  clustAssignments = bplapply(1:nboots, \(boot){
     getClustAssignments( pca[sample(rownames(pca), bootSize*length(rownames(pca)), replace = TRUE),],
                          resRange = resRange, kNum=kNum, clusterFun = clusterFun, cellOrder = rownames(pca), mode = mode, seed=seed)
   }, BPPARAM = BPPARAM )
@@ -319,7 +325,7 @@
   clustAssignments[is.na(clustAssignments)] = -1
   
   #Function to compute jaccard similarity between non-binary sets (ignoring -1s), implemented in C++
-  jaccardDist <- cppXPtr("double customDist(const arma::mat &A, const arma::mat &B) { 
+  jaccardDist = cppXPtr("double customDist(const arma::mat &A, const arma::mat &B) { 
                               float overlap, U;
                               double jaccard;
                               overlap = arma::accu((A == B) && (A != -1));
@@ -375,7 +381,7 @@
     stabilityMat[is.na(stabilityMat)] = 1
     
     #Merge clusters with low stablity in the bootstraps
-    while(min(stabilityMat) < 0.4){
+    while(min(stabilityMat) < minStability){
       clustersToMerge = as.numeric(which(stabilityMat == min(stabilityMat), arr.ind = TRUE))
       finalAssignments[finalAssignments == clustersToMerge[2]] = clustersToMerge[1]  
       stabilityMat[clustersToMerge[1],clustersToMerge[2]] = 1
@@ -400,11 +406,16 @@
       
       #Make SCE object of variable features, and model paramters of these features, assuming they come from one distribution, with scDesign3
       sce = SingleCellExperiment(assays=list(counts = counts[variableFeaturesCounts, ]))
-      colData(sce) = cbind( colData(sce), finalAssignments, varsToRegress)
+      if(!is.null(varsToRegress)){
+        colData(sce) = cbind( colData(sce), finalAssignments, varsToRegress)
+      } else {
+        colData(sce) = cbind( colData(sce), finalAssignments)
+      }
+      
       colData(sce)$single = rep(1)
       
       data <- construct_data(sce = sce, assay_use = "counts", celltype = "single", pseudotime = NULL, spatial = NULL, 
-                             other_covariates = "logUMI", corr_by = "1")
+                             other_covariates = colnames(varsToRegress), corr_by = "1")
       marginals <- fit_marginal(data = data, mu_formula = "1", sigma_formula = "1", family_use = "poisson", usebam = T, n_cores = 1)
       copula <- fit_copula(sce = sce, assay_use = "counts", marginal_list = marginals, family_use = "poisson", copula = "gaussian",
           n_cores = 1, input_data = data$dat)
@@ -416,7 +427,7 @@
       nullDist = unlist(bplapply(1:20, function(i) {
         generateNullStatistic(sce, params, data, copula, pcNum=pcNum, varsToRegress = varsToRegress,regressMethod = regressMethod, 
                               scale=scale, center = center, kNum=kNum, clusterFun = clusterFun, seed=seed)
-      }, BPPARAM = BPPARAM))
+      }, BPPARAM = BPPARAM)) 
       
       # Test the statistical signifcance of the difference in silhouette scores between the NULL and real clusterings - are your clusters
       # significantly better connected than those geneerated if we assume the data is truly from a single population?
@@ -440,9 +451,12 @@
         BPPARAM = SerialParam(RNGseed = seed)
       }
       subassignments = bplapply(clustersToSubcluster, function(cluster){
-        #Subset vars to regress
-        newVarsToRegress = as.data.frame(varsToRegress[finalAssignments == cluster, ])
+        if(!is.null(varsToRegress)){
+          #Subset vars to regress
+          newVarsToRegress = as.data.frame(varsToRegress[finalAssignments == cluster, ])
+        } 
         colnames(newVarsToRegress) = colnames(varsToRegress)
+        sizeFactors = sizeFactors[finalAssignments == cluster]
         consensusClust(counts[,finalAssignments == cluster], pcaMethod=pcaMethod, nboots=nboots, clusterFun=clusterFun,
                               bootSize=bootSize, resRange = resRange, kNum=kNum, mode = mode, variableFeatures=NULL,
                               scale=scale, varsToRegress=newVarsToRegress, regressMethod=regressMethod, depth=depth+1,iterate=T,
@@ -625,7 +639,9 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale,
       filtered_gene = my_data$filtered_gene
     )
   null = shifted_log_transform(null, size_factors = "deconvolution", pseudo_count = 1)
-  null = regressFeatures(null, varsToRegress, regressMethod = regressMethod, BPPARAM = SerialParam(RNGseed = seed), seed=seed)
+  if(!is.null(varsToRegress)){
+    null = regressFeatures(null, varsToRegress, regressMethod = regressMethod, BPPARAM = SerialParam(RNGseed = seed), seed=seed)
+  }
   
   pcaNull = tryCatch(
     {
