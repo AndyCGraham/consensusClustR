@@ -114,7 +114,8 @@
                                     regressMethod = "lm", skipFirstRegression=F, nboots=100, bootSize=0.9, 
                                   clusterFun="leiden", resRange = c(0.01, 0.03, 0.05, 0.07, 0.10, seq.int(0.11, 1.5, length.out=10)),
                                   kNum=30, silhouetteThresh = 0.4, minSize = 50, assay="RNA", mode = "robust", 
-                                  BPPARAM=SerialParam(RNGseed = seed), seed=123, depth=1, minStability=0.25, ...) {
+                                  BPPARAM=SerialParam(RNGseed = seed), seed=123, depth=1, minStability=0.25, 
+                             pcVar = 0.2, ...) {
   
   #Check inputs are correct
   stopifnot("`counts` must be a matrix, sparse matrix of type dgCMatrix, seurat object, or single-cell experiment object." = 
@@ -272,7 +273,7 @@
       #If this doesn't work well or cluster is very small, use variance explained
       if (any(pcNum == "find", pcNum > 30)) {
         pca = prcomp_irlba(t(as.matrix(normCounts)), 50, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})
-        pcNum = max(which(sapply(1:50, \(pcNum) sum(pca[["sdev"]][1:pcNum])/ sum(pca[["sdev"]]) ) > 0.1)[1], 5)
+        pcNum = max(which(sapply(1:50, \(pcNum) sum(pca[["sdev"]][1:pcNum])/ sum(pca[["sdev"]]) ) > pcVar)[1], 5)
         pca = pca$x
         rownames(pca) = colnames(normCounts)
       }
@@ -297,7 +298,7 @@
                            NULL
                          })
       pcNum = max(which(sapply(1:50, function(pcNum) sum(pca[["sdev"]][1:pcNum])/sum(pca[["sdev"]])) > 
-                          0.1)[1], 5)
+                          pcVar)[1], 5)
       pca = pca$x
       rownames(pca) = colnames(normCounts)
     }
@@ -412,9 +413,9 @@
         colData(sce) = cbind( colData(sce), finalAssignments)
       }
       
-      colData(sce)$single = rep(1)
+      colData(sce)$cell_type = rep(1)
       
-      data <- construct_data(sce = sce, assay_use = "counts", celltype = "single", pseudotime = NULL, spatial = NULL, 
+      data <- construct_data(sce = sce, assay_use = "counts", celltype = "cell_type", pseudotime = NULL, spatial = NULL, 
                              other_covariates = colnames(varsToRegress), corr_by = "1")
       marginals <- fit_marginal(data = data, mu_formula = "1", sigma_formula = "1", family_use = "poisson", usebam = T, n_cores = 1)
       copula <- fit_copula(sce = sce, assay_use = "counts", marginal_list = marginals, family_use = "poisson", copula = "gaussian",
