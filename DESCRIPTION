@@ -39,4 +39,4 @@ biocViews:
     scran (>= 1.0)
     scry (>= 1.0)
 Remotes:
-    SONGDONGYUAN1994/scDesign3
+    SONGDONGYUAN1994/scDesign3@e595e4824a91c456ebcaee908c2f4a0398d9ea90
