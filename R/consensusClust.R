@@ -432,6 +432,7 @@
       
       # Test the statistical signifcance of the difference in silhouette scores between the NULL and real clusterings - are your clusters
       # significantly better connected than those geneerated if we assume the data is truly from a single population?
+      silhouette = calc2CI(pca[finalAssignments == 1,], pca[finalAssignments == 2,])
       fit <- fitdistr(nullDist,'normal')
       pval <- pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
   
@@ -739,6 +740,7 @@ regressFeatures = function(normCounts, variablesToRegress,regressMethod, BPPARAM
   return(normCounts)
 }
 
+
 #' Given two vectors of equal length, replaces missing values in the first with values at the same indices in the second
 #' @noRd
 #' 
@@ -749,4 +751,32 @@ coalesce2 <- function(...) {
     x},
     list(...))
 }
+
+
+#' calculate 2-means cluster index (n x p matrices)
+#' @noRd
+#' @export
+#'
+calc2CI <- function(x1, x2) {
+  
+  if (is.matrix(x1) && is.matrix(x2) && ncol(x1) == ncol(x2)) {
+    
+    (sumsq(x1) + sumsq(x2)) / sumsq(rbind(x1, x2))
+    
+  } else {
+    
+    stop(paste("x1, x2 must be matrices with same ncols",
+               
+               "for 2CI calculation"))
+    
+  }     
+  
+}
+
+
+#' calculate sum of squares
+#' @noRd
+#' @export
+#'
+sumsq <- function(x) { norm(sweep(x, 2, colMeans(x), "-"), "F")^2 }
 
