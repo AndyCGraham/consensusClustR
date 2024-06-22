@@ -749,8 +749,9 @@ calc2CI <- function(x1, x2) {
   if (is.matrix(x1) && is.matrix(x2) && ncol(x1) == ncol(x2)) {
     (sumsq(x1) + sumsq(x2)) / sumsq(rbind(x1, x2))
   } else {
-    stop(paste("x1, x2 must be matrices with same ncols",
-               "for 2CI calculation"))
+    message("x1, x2 must be matrices with same ncols",
+               "for 2CI calculation")
+    1
   }     
 }
 
