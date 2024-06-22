@@ -502,6 +502,7 @@ consensusClust <- function(counts, iterate=FALSE, alpha=0.05, pca=NULL, pcNum="f
         
       } else if (pval >= alpha) {
         #Else if cluster assignments are no better than chance, then don't return assignments as likely overclustered
+        message("failed test")
         finalAssignments = rep("1", length(finalAssignments))
         dendrogram = NULL
       } else {
