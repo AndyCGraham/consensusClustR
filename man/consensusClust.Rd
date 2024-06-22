@@ -31,6 +31,7 @@ consensusClust(
   BPPARAM = SerialParam(RNGseed = seed),
   seed = 123,
   depth = 1,
+  minStability = 0.25,
   ...
 )
 }

@@ -109,12 +109,12 @@
 #' sce = SingleCellExperiment(assays=list(counts=counts, logcounts=data)) 
 #' results = consensusClust(sce, pcNum = 5, iterate = T)
 #' 
-  consensusClust <- function(counts, iterate=FALSE, alpha=0.05, pca=NULL, pcNum="find", pcaMethod = "irlba", scale=T, center=T, 
-                                    sizeFactors="deconvolution", variableFeatures=NULL, nVarFeatures=2000, varsToRegress=NULL, 
-                                    regressMethod = "lm", skipFirstRegression=F, nboots=100, bootSize=0.9, 
-                                  clusterFun="leiden", resRange = c(0.01, 0.03, 0.05, 0.07, 0.10, seq.int(0.11, 1.5, length.out=10)),
-                                  kNum=30, silhouetteThresh = 0.4, minSize = 50, assay="RNA", mode = "robust", 
-                                  BPPARAM=SerialParam(RNGseed = seed), seed=123, depth=1, minStability=0.25, ...) {
+consensusClust <- function(counts, iterate=FALSE, alpha=0.05, pca=NULL, pcNum="find", pcaMethod = "irlba", scale=T, center=T, 
+                           sizeFactors="deconvolution", variableFeatures=NULL, nVarFeatures=2000, varsToRegress=NULL, 
+                           regressMethod = "lm", skipFirstRegression=F, nboots=100, bootSize=0.9, 
+                           clusterFun="leiden", resRange = c(0.01, 0.03, 0.05, 0.07, 0.10, seq.int(0.11, 1.5, length.out=10)),
+                           kNum=30, silhouetteThresh = 0.4, minSize = 50, assay="RNA", mode = "robust", 
+                           BPPARAM=SerialParam(RNGseed = seed), seed=123, depth=1, minStability=0.25, ...) {
   
   #Check inputs are correct
   stopifnot("`counts` must be a matrix, sparse matrix of type dgCMatrix, seurat object, or single-cell experiment object." = 
@@ -128,7 +128,7 @@
                 all((length(pcNum)==1) & (pcNum%%1==0) & (pcNum > 0) & (pcNum < ncol(data))) )
   }
   stopifnot("`pcaMethod` must be one of 'irlba', 'svd', or 'prcomp.'" = 
-                  pcaMethod %in% c("irlba", "svd", "prcomp") )
+              pcaMethod %in% c("irlba", "svd", "prcomp") )
   stopifnot("`nboots` must be a positive integer." = 
               all((nboots%%1==0) & (nboots > 0) & (length(nboots)==1)) )
   stopifnot("`clusterFun` must be a either leiden or louvain." = 
@@ -184,10 +184,10 @@
     
     #Get variable features if in object
     if(!is.null(variableFeatures)){
-    variableFeaturesCounts = rownames(counts) %in% variableFeatures
-    if(!is.null(normCounts)){
-      variableFeatures = rownames(normCounts) %in% variableFeatures
-    }
+      variableFeaturesCounts = rownames(counts) %in% variableFeatures
+      if(!is.null(normCounts)){
+        variableFeatures = rownames(normCounts) %in% variableFeatures
+      }
     }
     #If not SCE
   } else if(class(counts)[1]=="SingleCellExperiment"){
@@ -225,19 +225,19 @@
   #Normalise counts if not provided
   if(sizeFactors[1]=="deconvolution"){
     sizeFactors = calculateSumFactors(counts, BPPARAM = BPPARAM)
-      # stabilize size factors to have geometric mean of 1
-      zeroSFs = any(is.nan(sizeFactors) | sizeFactors <= 0)
-      sizeFactors[zeroSFs] <- NA
-      if(zeroSFs){
-        sizeFactors <- sizeFactors/exp(mean(log(sizeFactors), na.rm=TRUE))
-        sizeFactors[zeroSFs] <- 0.001
-        }else{
-        sizeFactors <- sizeFactors/exp(mean(log(sizeFactors)))
-        }
-      }
+    # stabilize size factors to have geometric mean of 1
+    zeroSFs = any(is.nan(sizeFactors) | sizeFactors <= 0)
+    sizeFactors[zeroSFs] <- NA
+    if(zeroSFs){
+      sizeFactors <- sizeFactors/exp(mean(log(sizeFactors), na.rm=TRUE))
+      sizeFactors[zeroSFs] <- 0.001
+    }else{
+      sizeFactors <- sizeFactors/exp(mean(log(sizeFactors)))
+    }
+  }
   if(!exists("normCounts")){
     normCounts = shifted_log_transform(counts, size_factors = sizeFactors, pseudo_count = 1)  
-    }
+  }
   
   #Find variable features if required
   if(is.null(variableFeatures)){
@@ -332,7 +332,7 @@
                               U = arma::accu((A != -1) && (B != -1));
                               jaccard = overlap / U;
                               return jaccard; }",
-                                        depends = c("RcppArmadillo"))
+                        depends = c("RcppArmadillo"))
   
   #Calculate distance matrix
   jaccardDist = 1-parDist(clustAssignments, method="custom", func = jaccardDist, threads = BPPARAM$workers) 
@@ -350,7 +350,7 @@
   } else if(clusterFun=="louvain"){
     finalAssignments = lapply(resRange, \(res){
       cluster_louvain(snnGraph, objective_function = "modularity", resolution_parameter = res, 
-                     beta = 0.01, n_iterations = 2)$membership 
+                      beta = 0.01, n_iterations = 2)$membership 
     })
   }
   
@@ -360,7 +360,7 @@
       silhouette = mean(approxSilhouette(pca, res)[,3], na.rm = T)
     } else if(length(unique(res))==length(res)){
       -1
-      } else {
+    } else {
       0.15
     }
   })), ties.method ="last")
@@ -398,125 +398,126 @@
     
     #If still more than one cluster lets test whether it's likely such strong clustering would not appear due to sampling noise
     if(length(unique(finalAssignments)) > 1){
-    
-    ##If more than one cluster, and a low silhouette score or small clusters test if these assignments are better than noise
-    silhouette = mean(approxSilhouette(pca, finalAssignments)[,3], na.rm = T)
-    
-    if(any(silhouette <= silhouetteThresh, min(table(finalAssignments)<50))){
       
-      #Make SCE object of variable features, and model paramters of these features, assuming they come from one distribution, with scDesign3
-      sce = SingleCellExperiment(assays=list(counts = counts[variableFeaturesCounts, ]))
-      if(!is.null(varsToRegress)){
-        colData(sce) = cbind( colData(sce), finalAssignments, varsToRegress)
-      } else {
-        colData(sce) = cbind( colData(sce), finalAssignments)
-      }
+      ##If more than one cluster, and a low silhouette score or small clusters test if these assignments are better than noise
+      silhouette = mean(approxSilhouette(pca, finalAssignments)[,3], na.rm = T)
       
-      colData(sce)$single = rep(1)
-      
-      data <- construct_data(sce = sce, assay_use = "counts", celltype = "single", pseudotime = NULL, spatial = NULL, 
-                             other_covariates = colnames(varsToRegress), corr_by = "1")
-      marginals <- fit_marginal(data = data, mu_formula = "1", sigma_formula = "1", family_use = "poisson", usebam = T, n_cores = 1)
-      copula <- fit_copula(sce = sce, assay_use = "counts", marginal_list = marginals, family_use = "poisson", copula = "gaussian",
-          n_cores = 1, input_data = data$dat)
-      params <- extract_para(sce = sce, marginal_list = marginals, family_use = "poisson", new_covariate = data$newCovariate,
-            data = data$dat, n_cores = 1)
-      
-      # Generate null distribution for Silhouette score based on simulating a new dataset based on these single population paramters, 
-      # clustering, and calculating the silhouette score.
-      nullDist = unlist(bplapply(1:20, function(i) {
-        generateNullStatistic(sce, params, data, copula, pcNum=pcNum, varsToRegress = varsToRegress,regressMethod = regressMethod, 
-                              scale=scale, center = center, kNum=kNum, clusterFun = clusterFun, seed=seed)
-      }, BPPARAM = BPPARAM)) 
-      
-      # Test the statistical signifcance of the difference in silhouette scores between the NULL and real clusterings - are your clusters
-      # significantly better connected than those geneerated if we assume the data is truly from a single population?
-      fit <- fitdistr(nullDist,'normal')
-      pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
-  
-    } else {
-      #If silhouette score is below the threshold, we can save time by assuming these clusters are real - adjust threshold to avoid this 
-      #behaviour
-      pval = 0
-    }
-    #If subclusters are much better than those returned by chance keep subclustering until assignments are no better than chance
-    if(all(pval < alpha, iterate)){
-      clustersToSubcluster = unique(finalAssignments)[sapply(unique(finalAssignments), \(cluster) sum(finalAssignments == cluster)) > minSize]
-      clustersToSubcluster = setNames(clustersToSubcluster, clustersToSubcluster)
-      #Decide whether to parallelise the runs or functions within the runs, based on how many runs are needed
-      if(length(unique(finalAssignments)) >= BPPARAM$workers){
-        withinRunsBPPARAM = SerialParam(RNGseed = seed)
-      } else {
-        withinRunsBPPARAM = BPPARAM
-        BPPARAM = SerialParam(RNGseed = seed)
-      }
-      subassignments = bplapply(clustersToSubcluster, function(cluster){
-        if(!is.null(varsToRegress)){
-          #Subset vars to regress
-          newVarsToRegress = as.data.frame(varsToRegress[finalAssignments == cluster, ])
-        } 
-        colnames(newVarsToRegress) = colnames(varsToRegress)
-        sizeFactors = sizeFactors[finalAssignments == cluster]
-        consensusClust(counts[,finalAssignments == cluster], pcaMethod=pcaMethod, nboots=nboots, clusterFun=clusterFun,
-                              bootSize=bootSize, resRange = resRange, kNum=kNum, mode = mode, variableFeatures=NULL,
-                              scale=scale, varsToRegress=newVarsToRegress, regressMethod=regressMethod, depth=depth+1,iterate=T,
-                              sizeFactors = "deconvolution", BPPARAM=withinRunsBPPARAM, ...)$assignments
-      }, BPPARAM=BPPARAM)
-      
-      #Replace errors (from pca not being able to be run in tiny clusters etc.) with lack of clustering
-      subassignments[sapply(subassignments, \(subcluster) length(subcluster) == 2)] = "1"
-      
-      #Add subcluster annotations
-      for (cluster in clustersToSubcluster[sapply(subassignments, \(subclusters) length(unique(subclusters))) > 1]){
-        finalAssignments[finalAssignments == cluster] = paste0(finalAssignments[finalAssignments == cluster], "_", subassignments[[as.character(cluster)]])
-      }
-      
-      #At top level assess cluster relationships
-      if(all(depth==1)){
-        #Compute cluster dendrogram
-        dendrogram = determineHierachy(as.matrix(jaccardDist), finalAssignments)
+      if(any(silhouette <= silhouetteThresh, min(table(finalAssignments)<50))){
         
-        #Use clustree to visualise parent-child relationships
-        clustree = str_split(finalAssignments, "_")
-        maxlen <- max(lengths(clustree))
-        clustree = lapply(clustree, \(cell) c(if(length(cell) > 1){ c(cell[1], sapply(2:length(cell), \(res) 
-                                                                                      paste(cell[1:res], collapse ="_") ) )
-                                                                      } else { cell } , rep(NA, maxlen - length(cell))))  
-        clustree = as.data.frame(do.call(rbind, clustree))
-        if(ncol(clustree) > 1){
-          #Fill with previous depth if not subclustered
-          for(depth in 2:ncol(clustree)){
-            clustree[,depth] = coalesce2(clustree[,depth], clustree[,depth-1])
-          }
-          colnames(clustree) = gsub("V", "Cluster", colnames(clustree))
-          clustree = clustree(clustree, prefix = "Cluster")
+        #Make SCE object of variable features, and model paramters of these features, assuming they come from one distribution, with scDesign3
+        sce = SingleCellExperiment(assays=list(counts = counts[variableFeaturesCounts, ]))
+        if(!is.null(varsToRegress)){
+          colData(sce) = cbind( colData(sce), finalAssignments, varsToRegress)
         } else {
+          colData(sce) = cbind( colData(sce), finalAssignments)
+        }
+        
+        colData(sce)$single = rep(1)
+        
+        data <- construct_data(sce = sce, assay_use = "counts", celltype = "single", pseudotime = NULL, spatial = NULL, 
+                               other_covariates = colnames(varsToRegress), corr_by = "1")
+        marginals <- fit_marginal(data = data, mu_formula = "1", sigma_formula = "1", family_use = "nb", usebam = T, n_cores = 1)
+        copula <- fit_copula(sce = sce, assay_use = "counts", marginal_list = marginals, family_use = "nb", copula = "gaussian",
+                             n_cores = 1, input_data = data$dat)
+        params <- extract_para(sce = sce, marginal_list = marginals, family_use = "nb", new_covariate = data$newCovariate,
+                               data = data$dat, n_cores = 1)
+        
+        # Generate null distribution for Silhouette score based on simulating a new dataset based on these single population paramters, 
+        # clustering, and calculating the silhouette score.
+        nullDist = unlist(bplapply(1:20, function(i) {
+          generateNullStatistic(sce, params, data, copula, pcNum=pcNum, varsToRegress = varsToRegress,regressMethod = regressMethod, 
+                                scale=scale, center = center, kNum=kNum, clusterFun = clusterFun, seed=seed)
+        }, BPPARAM = BPPARAM)) 
+        
+        # Test the statistical signifcance of the difference in silhouette scores between the NULL and real clusterings - are your clusters
+        # significantly better connected than those geneerated if we assume the data is truly from a single population?
+        silhouette = calc2CI(pca[finalAssignments == 0,], pca[finalAssignments == 1,])
+        fit <- fitdistr(nullDist,'normal')
+        pval <- pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
+        
+      } else {
+        #If silhouette score is below the threshold, we can save time by assuming these clusters are real - adjust threshold to avoid this 
+        #behaviour
+        pval = 0
+      }
+      #If subclusters are much better than those returned by chance keep subclustering until assignments are no better than chance
+      if(all(pval < alpha, iterate)){
+        clustersToSubcluster = unique(finalAssignments)[sapply(unique(finalAssignments), \(cluster) sum(finalAssignments == cluster)) > minSize]
+        clustersToSubcluster = setNames(clustersToSubcluster, clustersToSubcluster)
+        #Decide whether to parallelise the runs or functions within the runs, based on how many runs are needed
+        if(length(unique(finalAssignments)) >= BPPARAM$workers){
+          withinRunsBPPARAM = SerialParam(RNGseed = seed)
+        } else {
+          withinRunsBPPARAM = BPPARAM
+          BPPARAM = SerialParam(RNGseed = seed)
+        }
+        subassignments = bplapply(clustersToSubcluster, function(cluster){
+          if(!is.null(varsToRegress)){
+            #Subset vars to regress
+            newVarsToRegress = as.data.frame(varsToRegress[finalAssignments == cluster, ])
+          } 
+          colnames(newVarsToRegress) = colnames(varsToRegress)
+          sizeFactors = sizeFactors[finalAssignments == cluster]
+          consensusClust(counts[,finalAssignments == cluster], pcaMethod=pcaMethod, nboots=nboots, clusterFun=clusterFun,
+                         bootSize=bootSize, resRange = resRange, kNum=kNum, mode = mode, variableFeatures=NULL,
+                         scale=scale, varsToRegress=newVarsToRegress, regressMethod=regressMethod, depth=depth+1,iterate=T,
+                         sizeFactors = "deconvolution", BPPARAM=withinRunsBPPARAM, ...)$assignments
+        }, BPPARAM=BPPARAM)
+        
+        #Replace errors (from pca not being able to be run in tiny clusters etc.) with lack of clustering
+        subassignments[sapply(subassignments, \(subcluster) length(subcluster) == 2)] = "1"
+        
+        #Add subcluster annotations
+        for (cluster in clustersToSubcluster[sapply(subassignments, \(subclusters) length(unique(subclusters))) > 1]){
+          finalAssignments[finalAssignments == cluster] = paste0(finalAssignments[finalAssignments == cluster], "_", subassignments[[as.character(cluster)]])
+        }
+        
+        #At top level assess cluster relationships
+        if(all(depth==1)){
+          #Compute cluster dendrogram
+          dendrogram = determineHierachy(as.matrix(jaccardDist), finalAssignments)
+          
+          #Use clustree to visualise parent-child relationships
+          clustree = str_split(finalAssignments, "_")
+          maxlen <- max(lengths(clustree))
+          clustree = lapply(clustree, \(cell) c(if(length(cell) > 1){ c(cell[1], sapply(2:length(cell), \(res) 
+                                                                                        paste(cell[1:res], collapse ="_") ) )
+          } else { cell } , rep(NA, maxlen - length(cell))))  
+          clustree = as.data.frame(do.call(rbind, clustree))
+          if(ncol(clustree) > 1){
+            #Fill with previous depth if not subclustered
+            for(depth in 2:ncol(clustree)){
+              clustree[,depth] = coalesce2(clustree[,depth], clustree[,depth-1])
+            }
+            colnames(clustree) = gsub("V", "Cluster", colnames(clustree))
+            clustree = clustree(clustree, prefix = "Cluster")
+          } else {
+            clustree = NULL
+          }
+        } else{
+          dendrogram = NULL
           clustree = NULL
         }
-      } else{
+        
+      } else if (pval >= alpha) {
+        #Else if cluster assignments are no better than chance, then don't return assignments as likely overclustered
+        finalAssignments = rep("1", length(finalAssignments))
         dendrogram = NULL
+      } else {
+        #If not iterating just compute dendrogram and return assignments
+        dendrogram = determineHierachy(as.matrix(jaccardDist), finalAssignments)
         clustree = NULL
       }
       
-    } else if (pval >= alpha) {
-      #Else if cluster assignments are no better than chance, then don't return assignments as likely overclustered
-      finalAssignments = rep("1", length(finalAssignments))
-      dendrogram = NULL
-    } else {
-      #If not iterating just compute dendrogram and return assignments
-      dendrogram = determineHierachy(as.matrix(jaccardDist), finalAssignments)
-      clustree = NULL
-    }
-    
     }
   }
   
   #If there were no real clusters found, don't make a dendrogram or clustree
-    if(length(unique(finalAssignments)) == 1) {
-      finalAssignments = rep(1, length(finalAssignments))
-      dendrogram = NULL
-      clustree = NULL
-    }
+  if(length(unique(finalAssignments)) == 1) {
+    finalAssignments = rep(1, length(finalAssignments))
+    dendrogram = NULL
+    clustree = NULL
+  }
   
   return(list(assignments = finalAssignments, clusterDendrogram = dendrogram, clustree=clustree))
   
@@ -582,7 +583,7 @@ determineHierachy <- function(distanceMatrix, assignments, return = "hclust") {
   
   # Create a distance matrix for the clusters
   clusterDistanceMatrix <- matrix(0, nrow = length(unique(assignments)), 
-                                    ncol = length(unique(assignments)),
+                                  ncol = length(unique(assignments)),
                                   dimnames = list(unique(assignments), unique(assignments)))
   
   # Fill the cluster distance matrix with the distances between cluster centroids
@@ -623,21 +624,21 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale,
   
   # # #Simulate one group dataset based on count matrix
   null = simu_new(
-      sce = sce,
-      mean_mat = my_para$mean_mat,
-      sigma_mat = my_para$sigma_mat,
-      zero_mat = my_para$zero_mat,
-      quantile_mat = NULL,
-      copula_list = my_copula$copula_list,
-      n_cores = 1,
-      fastmvn=F,
-      nonzerovar=T,
-      family_use = "poisson",
-      input_data = my_data$dat,
-      new_covariate = my_data$newCovariate,
-      important_feature = my_copula$important_feature,
-      filtered_gene = my_data$filtered_gene
-    )
+    sce = sce,
+    mean_mat = my_para$mean_mat,
+    sigma_mat = my_para$sigma_mat,
+    zero_mat = my_para$zero_mat,
+    quantile_mat = NULL,
+    copula_list = my_copula$copula_list,
+    n_cores = 18,
+    fastmvn=F,
+    nonzerovar=T,
+    family_use = "nb",
+    input_data = my_data$dat,
+    new_covariate = my_data$newCovariate,
+    important_feature = my_copula$important_feature,
+    filtered_gene = my_data$filtered_gene
+  )
   null = shifted_log_transform(null, size_factors = "deconvolution", pseudo_count = 1)
   if(!is.null(varsToRegress)){
     null = regressFeatures(null, varsToRegress, regressMethod = regressMethod, BPPARAM = SerialParam(RNGseed = seed), seed=seed)
@@ -652,19 +653,15 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale,
     } )
   
   if(all(is.na(pcaNull))){
-    return(0)
+    return(1)
   }
   
   rownames(pcaNull) = colnames(null)
   
   assignments = getClustAssignments( pcaNull, cellOrder = rownames(pcaNull), resRange = seq.int(0.01, 3, length.out = 30), seed=seed, ...)
   
-  sil = if(all(length(unique(assignments)) > 1, min(table(assignments)) > 15, length(unique(assignments)) < length(assignments)/5 )){
-    mean(approxSilhouette(pcaNull, assignments)[,3], na.rm = T)
-  } else {
-    0
-  }
-    
+  sil = calc2CI(pcaNull[assignments == 1,], pcaNull[assignments == 2,])
+  
   return(sil)
 }
 
@@ -721,12 +718,12 @@ regressFeatures = function(normCounts, variablesToRegress,regressMethod, BPPARAM
     
     bplapply(genes, \(gene)
              residuals(object = glm(
-              formula = fmla,
-              family = 'poisson',
-              data = normCounts[,c(gene, colnames(variablesToRegress))]),
-              type = 'pearson'
-              ), BPPARAM=BPPARAM)
-             
+               formula = fmla,
+               family = 'poisson',
+               data = normCounts[,c(gene, colnames(variablesToRegress))]),
+               type = 'pearson'
+             ), BPPARAM=BPPARAM)
+    
     normCounts = do.call(cbind, residuals) 
     rownames(normCounts) = genes
   }
@@ -744,4 +741,19 @@ coalesce2 <- function(...) {
     x},
     list(...))
 }
+
+## calculate 2-means cluster index (n x p matrices)
+calc2CI <- function(x1, x2) {
+  if (is.matrix(x1) && is.matrix(x2) && ncol(x1) == ncol(x2)) {
+    (sumsq(x1) + sumsq(x2)) / sumsq(rbind(x1, x2))
+  } else {
+    stop(paste("x1, x2 must be matrices with same ncols",
+               "for 2CI calculation"))
+  }     
+}
+
+## calculate sum of squares
+sumsq <- function(x) { norm(sweep(x, 2, colMeans(x), "-"), "F")^2 }
+
+
 
