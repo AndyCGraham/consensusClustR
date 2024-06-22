@@ -455,8 +455,8 @@ consensusClust <- function(counts, iterate=FALSE, alpha=0.05, pca=NULL, pcNum="f
           if(!is.null(varsToRegress)){
             #Subset vars to regress
             newVarsToRegress = as.data.frame(varsToRegress[finalAssignments == cluster, ])
+            colnames(newVarsToRegress) = colnames(varsToRegress)
           } 
-          colnames(newVarsToRegress) = colnames(varsToRegress)
           sizeFactors = sizeFactors[finalAssignments == cluster]
           kNum = if(sum(finalAssignments == cluster) < 300){15}else{kNum}
           consensusClust(counts[,finalAssignments == cluster], pcaMethod=pcaMethod, nboots=nboots, clusterFun=clusterFun,
