@@ -432,7 +432,7 @@ consensusClust <- function(counts, iterate=FALSE, alpha=0.05, pca=NULL, pcNum="f
         
         # Test the statistical signifcance of the difference in silhouette scores between the NULL and real clusterings - are your clusters
         # significantly better connected than those geneerated if we assume the data is truly from a single population?
-        silhouette = calc2CI(pca[finalAssignments == 0,], pca[finalAssignments == 1,])
+        silhouette = calc2CI(pca[finalAssignments == 1,], pca[finalAssignments == 2,])
         fit <- fitdistr(nullDist,'normal')
         pval <- pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
         
