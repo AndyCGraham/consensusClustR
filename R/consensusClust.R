@@ -109,13 +109,13 @@
 #' sce = SingleCellExperiment(assays=list(counts=counts, logcounts=data)) 
 #' results = consensusClust(sce, pcNum = 5, iterate = T)
 #' 
-consensusClust <- function(counts, iterate=FALSE, alpha=0.05, pca=NULL, pcNum="find", pcaMethod = "irlba", scale=T, center=T, 
-                           sizeFactors="deconvolution", variableFeatures=NULL, nVarFeatures=2000, varsToRegress=NULL, 
-                           regressMethod = "lm", skipFirstRegression=F, nboots=100, bootSize=0.9, 
-                           clusterFun="leiden", resRange = c(0.01, 0.03, 0.05, 0.07, 0.10, seq.int(0.11, 1.5, length.out=10)),
-                           kNum=30, silhouetteThresh = 0.4, minSize = 50, assay="RNA", mode = "robust", 
-                           BPPARAM=SerialParam(RNGseed = seed), seed=123, depth=1, minStability=0.25, 
-                           pcVar=0.15, ...) {
+  consensusClust <- function(counts, iterate=FALSE, alpha=0.05, pca=NULL, pcNum="find", pcaMethod = "irlba", scale=T, center=T, 
+                                    sizeFactors="deconvolution", variableFeatures=NULL, nVarFeatures=2000, varsToRegress=NULL, 
+                                    regressMethod = "lm", skipFirstRegression=F, nboots=100, bootSize=0.9, 
+                                  clusterFun="leiden", resRange = c(0.01, 0.03, 0.05, 0.07, 0.10, seq.int(0.11, 1.5, length.out=10)),
+                                  kNum=30, silhouetteThresh = 0.4, minSize = 50, assay="RNA", mode = "robust", 
+                                  BPPARAM=SerialParam(RNGseed = seed), seed=123, depth=1, minStability=0.25, 
+                             pcVar = 0.2, ...) {
   
   #Check inputs are correct
   stopifnot("`counts` must be a matrix, sparse matrix of type dgCMatrix, seurat object, or single-cell experiment object." = 
@@ -399,60 +399,77 @@ consensusClust <- function(counts, iterate=FALSE, alpha=0.05, pca=NULL, pcNum="f
     
     #If still more than one cluster lets test whether it's likely such strong clustering would not appear due to sampling noise
     if(length(unique(finalAssignments)) > 1){
+    
+    ##If more than one cluster, and a low silhouette score or small clusters test if these assignments are better than noise
+    silhouette = mean(approxSilhouette(pca, finalAssignments)[,3], na.rm = T)
+    
+    if(any(silhouette <= silhouetteThresh, min(table(finalAssignments)<50))){
       
-      ##If more than one cluster, and a low silhouette score or small clusters test if these assignments are better than noise
-      silhouette = mean(approxSilhouette(pca, finalAssignments)[,3], na.rm = T)
+      dend = determineHierachy(as.matrix(dist(pca)), finalAssignments)
+      splits = unlist(dend)
+      assignments = finalAssignments
       
-      if(any(silhouette <= silhouetteThresh, min(table(finalAssignments)<50))){
+      #Make SCE object of variable features, and model paramters of these features, assuming they come from one distribution, with scDesign3
+      sce = SingleCellExperiment(assays=list(counts = counts[variableFeaturesCounts, ]))
+      if(!is.null(varsToRegress)){
+        colData(sce) = cbind( colData(sce), assignments, varsToRegress)
+      } else {
+        colData(sce) = cbind( colData(sce), assignments)
+      }
+      
+      #If more than one split, test each split in order
+      while(length(splits)>1){
+        assignments[assignments %in% splits[2:length(splits)]] = splits[2]
+        assignments = assignments[assignments %in% splits]
         
-        #Make SCE object of variable features, and model paramters of these features, assuming they come from one distribution, with scDesign3
-        sce = SingleCellExperiment(assays=list(counts = counts[variableFeaturesCounts, ]))
-        if(!is.null(varsToRegress)){
-          colData(sce) = cbind( colData(sce), finalAssignments, varsToRegress)
-        } else {
-          colData(sce) = cbind( colData(sce), finalAssignments)
-        }
-        
-        colData(sce)$single = rep(1)
-        
-        data <- construct_data(sce = sce, assay_use = "counts", celltype = "single", pseudotime = NULL, spatial = NULL, 
+        data <- construct_data(sce = sce[,finalAssignments %in% splits], assay_use = "counts", celltype = "single", pseudotime = NULL, spatial = NULL, 
                                other_covariates = colnames(varsToRegress), corr_by = "1")
         marginals <- fit_marginal(data = data, mu_formula = "1", sigma_formula = "1", family_use = "nb", usebam = T, n_cores = 1)
         copula <- fit_copula(sce = sce, assay_use = "counts", marginal_list = marginals, family_use = "nb", copula = "gaussian",
                              n_cores = 1, input_data = data$dat)
         params <- extract_para(sce = sce, marginal_list = marginals, family_use = "nb", new_covariate = data$newCovariate,
                                data = data$dat, n_cores = 1)
-        
+      
         # Generate null distribution for Silhouette score based on simulating a new dataset based on these single population paramters, 
         # clustering, and calculating the silhouette score.
         nullDist = unlist(bplapply(1:20, function(i) {
           generateNullStatistic(sce, params, data, copula, pcNum=pcNum, varsToRegress = varsToRegress,regressMethod = regressMethod, 
-                                scale=scale, center = center, kNum=kNum, clusterFun = clusterFun, seed=seed)
+                                resRange=resRange, scale=scale, center = center, kNum=kNum, clusterFun = clusterFun, seed=seed)
         }, BPPARAM = BPPARAM)) 
-        
+      
         # Test the statistical signifcance of the difference in silhouette scores between the NULL and real clusterings - are your clusters
         # significantly better connected than those geneerated if we assume the data is truly from a single population?
-        silhouette = calc2CI(pca[finalAssignments == 1,], pca[finalAssignments == 2,])
+        silhouette = mean(approxSilhouette(pca, assignments)[,3], na.rm = T)
         fit <- fitdistr(nullDist,'normal')
-        pval <- pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
+        pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
         
-      } else {
-        #If silhouette score is below the threshold, we can save time by assuming these clusters are real - adjust threshold to avoid this 
-        #behaviour
-        pval = 0
-      }
-      #If subclusters are much better than those returned by chance keep subclustering until assignments are no better than chance
-      if(all(pval < alpha, iterate)){
-        clustersToSubcluster = unique(finalAssignments)[sapply(unique(finalAssignments), \(cluster) sum(finalAssignments == cluster)) > minSize]
-        clustersToSubcluster = setNames(clustersToSubcluster, clustersToSubcluster)
-        #Decide whether to parallelise the runs or functions within the runs, based on how many runs are needed
-        if(length(unique(finalAssignments)) >= BPPARAM$workers){
-          withinRunsBPPARAM = SerialParam(RNGseed = seed)
-        } else {
-          withinRunsBPPARAM = BPPARAM
-          BPPARAM = SerialParam(RNGseed = seed)
+        #If failed test then reassign all remaining cells to the same cluster
+        if(pval >= alpha){
+          finalAssignments[finalAssignments %in% splits] = splits[1]
+          splits = splits[1]
+        } else{
+          #Otherwise test the next split
+          splits = splits[-1]
         }
-        subassignments = bplapply(clustersToSubcluster, function(cluster){
+      }
+  
+    } else {
+      #If silhouette score is below the threshold, we can save time by assuming these clusters are real - adjust threshold to avoid this 
+      #behaviour
+      pval = 0
+    }
+    #If subclusters are much better than those returned by chance keep subclustering until assignments are no better than chance
+    if(all(length(unique(finalAssignments)) > 1, iterate)){
+      clustersToSubcluster = unique(finalAssignments)[sapply(unique(finalAssignments), \(cluster) sum(finalAssignments == cluster)) > minSize]
+      clustersToSubcluster = setNames(clustersToSubcluster, clustersToSubcluster)
+      #Decide whether to parallelise the runs or functions within the runs, based on how many runs are needed
+      if(length(unique(finalAssignments)) >= BPPARAM$workers){
+        withinRunsBPPARAM = SerialParam(RNGseed = seed)
+      } else {
+        withinRunsBPPARAM = BPPARAM
+        BPPARAM = SerialParam(RNGseed = seed)
+      }
+      subassignments = bplapply(clustersToSubcluster, function(cluster){
           if(!is.null(varsToRegress)){
             #Subset vars to regress
             newVarsToRegress = as.data.frame(varsToRegress[finalAssignments == cluster, ])
@@ -511,7 +528,15 @@ consensusClust <- function(counts, iterate=FALSE, alpha=0.05, pca=NULL, pcNum="f
         dendrogram = determineHierachy(as.matrix(jaccardDist), finalAssignments)
         clustree = NULL
       }
-      
+    } else if (length(unique(finalAssignments)) == 1) {
+      message("Failed Test")
+      #Else if cluster assignments are no better than chance, then don't return assignments as likely overclustered
+      dendrogram = NULL
+    } else {
+      #If not iterating just compute dendrogram and return assignments
+      dendrogram = determineHierachy(as.matrix(jaccardDist), finalAssignments)
+      clustree = NULL
+    }
     }
   }
   
@@ -623,28 +648,31 @@ determineHierachy <- function(distanceMatrix, assignments, return = "hclust") {
 #' @importFrom BiocParallel SerialParam
 #' @noRd
 #'
-generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale, center,varsToRegress,regressMethod, seed, ...) {
+generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale, 
+                                  kNum, center,varsToRegress,regressMethod, seed, ...) {
   
   # # #Simulate one group dataset based on count matrix
   null = simu_new(
-    sce = sce,
-    mean_mat = my_para$mean_mat,
-    sigma_mat = my_para$sigma_mat,
-    zero_mat = my_para$zero_mat,
-    quantile_mat = NULL,
-    copula_list = my_copula$copula_list,
-    n_cores = 1,
-    fastmvn=F,
-    nonzerovar=T,
-    family_use = "nb",
-    input_data = my_data$dat,
-    new_covariate = my_data$newCovariate,
-    important_feature = my_copula$important_feature,
-    filtered_gene = my_data$filtered_gene
-  )
+      sce = sce,
+      mean_mat = my_para$mean_mat,
+      sigma_mat = my_para$sigma_mat,
+      zero_mat = my_para$zero_mat,
+      quantile_mat = NULL,
+      copula_list = my_copula$copula_list,
+      n_cores = 1,
+      fastmvn=F,
+      nonzerovar=T,
+      family_use = "nb",
+      input_data = my_data$dat,
+      new_covariate = my_data$newCovariate,
+      important_feature = my_copula$important_feature,
+      filtered_gene = my_data$filtered_gene
+    )
   null = shifted_log_transform(null, size_factors = "deconvolution", pseudo_count = 1)
   if(!is.null(varsToRegress)){
-    null = regressFeatures(null, varsToRegress, regressMethod = regressMethod, BPPARAM = SerialParam(RNGseed = seed), seed=seed)
+    varsToRegress[1:nrow(varsToRegress), 1:ncol(varsToRegress)] = as.data.frame(colData(sce)[,colnames(colData(sce)) %in% colnames(varsToRegress)])[1:nrow(varsToRegress), 1:ncol(varsToRegress)] 
+    null = regressFeatures(null, varsToRegress, 
+                           regressMethod = regressMethod, BPPARAM = SerialParam(RNGseed = seed), seed=seed)
   }
   
   pcaNull = tryCatch(
@@ -661,9 +689,20 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale,
   
   rownames(pcaNull) = colnames(null)
   
-  assignments = getClustAssignments( pcaNull, cellOrder = rownames(pcaNull), resRange = seq.int(0.01, 3, length.out = 30), seed=seed, ...)
+  assignments = getClustAssignments( pcaNull, cellOrder = rownames(pcaNull),kNum=kNum,
+                                     seed=seed, ...)
+
+  #Remove tiny clusters which it is hard to calculate silhouette for
+  while(min(table(assignments) < kNum)){
+    assignments[names(which.min(table(assignments)))] = names(which.max(table(assignments)))
+  }
   
-  sil = calc2CI(pcaNull[assignments == 1,], pcaNull[assignments == 2,])
+  #Return a score of 0 if only 1 cluster
+  if(length(unique(assignments))< 2){
+    return(0)
+  }
+  
+  sil = mean(approxSilhouette(pcaNull, assignments)[,3], na.rm = T)
   
   return(sil)
 }
@@ -734,6 +773,7 @@ regressFeatures = function(normCounts, variablesToRegress,regressMethod, BPPARAM
   return(normCounts)
 }
 
+
 #' Given two vectors of equal length, replaces missing values in the first with values at the same indices in the second
 #' @noRd
 #' 
@@ -745,19 +785,28 @@ coalesce2 <- function(...) {
     list(...))
 }
 
-## calculate 2-means cluster index (n x p matrices)
+#' calculate 2-means cluster index (n x p matrices)
+#' @noRd
+#' @export
+#'
 calc2CI <- function(x1, x2) {
+  
   if (is.matrix(x1) && is.matrix(x2) && ncol(x1) == ncol(x2)) {
+    
     (sumsq(x1) + sumsq(x2)) / sumsq(rbind(x1, x2))
+    
   } else {
-    message("x1, x2 must be matrices with same ncols",
-               "for 2CI calculation")
-    1
+    
+    stop(paste("x1, x2 must be matrices with same ncols",
+               
+               "for 2CI calculation"))
+    
   }     
+  
 }
 
-## calculate sum of squares
+#' calculate sum of squares
+#' @noRd
+#' @export
+#'
 sumsq <- function(x) { norm(sweep(x, 2, colMeans(x), "-"), "F")^2 }
-
-
-
