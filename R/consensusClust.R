@@ -129,7 +129,7 @@
                 all((length(pcNum)==1) & (pcNum%%1==0) & (pcNum > 0) & (pcNum < ncol(data))) )
   }
   stopifnot("`pcaMethod` must be one of 'irlba', 'svd', or 'prcomp.'" = 
-              pcaMethod %in% c("irlba", "svd", "prcomp") )
+                  pcaMethod %in% c("irlba", "svd", "prcomp") )
   stopifnot("`nboots` must be a positive integer." = 
               all((nboots%%1==0) & (nboots > 0) & (length(nboots)==1)) )
   stopifnot("`clusterFun` must be a either leiden or louvain." = 
@@ -185,10 +185,10 @@
     
     #Get variable features if in object
     if(!is.null(variableFeatures)){
-      variableFeaturesCounts = rownames(counts) %in% variableFeatures
-      if(!is.null(normCounts)){
-        variableFeatures = rownames(normCounts) %in% variableFeatures
-      }
+    variableFeaturesCounts = rownames(counts) %in% variableFeatures
+    if(!is.null(normCounts)){
+      variableFeatures = rownames(normCounts) %in% variableFeatures
+    }
     }
     #If not SCE
   } else if(class(counts)[1]=="SingleCellExperiment"){
@@ -226,19 +226,19 @@
   #Normalise counts if not provided
   if(sizeFactors[1]=="deconvolution"){
     sizeFactors = calculateSumFactors(counts, BPPARAM = BPPARAM)
-    # stabilize size factors to have geometric mean of 1
-    zeroSFs = any(is.nan(sizeFactors) | sizeFactors <= 0)
-    sizeFactors[zeroSFs] <- NA
-    if(zeroSFs){
-      sizeFactors <- sizeFactors/exp(mean(log(sizeFactors), na.rm=TRUE))
-      sizeFactors[zeroSFs] <- 0.001
-    }else{
-      sizeFactors <- sizeFactors/exp(mean(log(sizeFactors)))
-    }
-  }
+      # stabilize size factors to have geometric mean of 1
+      zeroSFs = any(is.nan(sizeFactors) | sizeFactors <= 0)
+      sizeFactors[zeroSFs] <- NA
+      if(zeroSFs){
+        sizeFactors <- sizeFactors/exp(mean(log(sizeFactors), na.rm=TRUE))
+        sizeFactors[zeroSFs] <- 0.001
+        }else{
+        sizeFactors <- sizeFactors/exp(mean(log(sizeFactors)))
+        }
+      }
   if(!exists("normCounts")){
     normCounts = shifted_log_transform(counts, size_factors = sizeFactors, pseudo_count = 1)  
-  }
+    }
   
   #Find variable features if required
   if(is.null(variableFeatures)){
@@ -333,7 +333,7 @@
                               U = arma::accu((A != -1) && (B != -1));
                               jaccard = overlap / U;
                               return jaccard; }",
-                        depends = c("RcppArmadillo"))
+                                        depends = c("RcppArmadillo"))
   
   #Calculate distance matrix
   jaccardDist = 1-parDist(clustAssignments, method="custom", func = jaccardDist, threads = BPPARAM$workers) 
@@ -351,7 +351,7 @@
   } else if(clusterFun=="louvain"){
     finalAssignments = lapply(resRange, \(res){
       cluster_louvain(snnGraph, objective_function = "modularity", resolution_parameter = res, 
-                      beta = 0.01, n_iterations = 2)$membership 
+                     beta = 0.01, n_iterations = 2)$membership 
     })
   }
   
@@ -361,7 +361,7 @@
       silhouette = mean(approxSilhouette(pca, res)[,3], na.rm = T)
     } else if(length(unique(res))==length(res)){
       -1
-    } else {
+      } else {
       0.15
     }
   })), ties.method ="last")
@@ -417,6 +417,8 @@
         colData(sce) = cbind( colData(sce), assignments)
       }
       
+      colData(sce)$single = rep(1)
+      
       #If more than one split, test each split in order
       while(length(splits)>1){
         assignments[assignments %in% splits[2:length(splits)]] = splits[2]
@@ -470,64 +472,53 @@
         BPPARAM = SerialParam(RNGseed = seed)
       }
       subassignments = bplapply(clustersToSubcluster, function(cluster){
-          if(!is.null(varsToRegress)){
-            #Subset vars to regress
-            newVarsToRegress = as.data.frame(varsToRegress[finalAssignments == cluster, ])
-            colnames(newVarsToRegress) = colnames(varsToRegress)
-          } 
-          sizeFactors = sizeFactors[finalAssignments == cluster]
-          kNum = if(sum(finalAssignments == cluster) < 300){15}else{kNum}
-          consensusClust(counts[,finalAssignments == cluster], pcaMethod=pcaMethod, nboots=nboots, clusterFun=clusterFun,
-                         bootSize=bootSize, resRange = resRange, kNum=kNum, mode = mode, variableFeatures=NULL,
-                         scale=scale, varsToRegress=newVarsToRegress, regressMethod=regressMethod, depth=depth+1,iterate=T,
-                         sizeFactors = "deconvolution", BPPARAM=withinRunsBPPARAM, ...)$assignments
-        }, BPPARAM=BPPARAM)
+        if(!is.null(varsToRegress)){
+          #Subset vars to regress
+          newVarsToRegress = as.data.frame(varsToRegress[finalAssignments == cluster, ])
+        } 
+        colnames(newVarsToRegress) = colnames(varsToRegress)
+        sizeFactors = sizeFactors[finalAssignments == cluster]
+        consensusClust(counts[,finalAssignments == cluster], pcaMethod=pcaMethod, nboots=nboots, clusterFun=clusterFun,
+                              bootSize=bootSize, resRange = resRange, kNum=kNum, mode = mode, variableFeatures=NULL,
+                              scale=scale, varsToRegress=newVarsToRegress, regressMethod=regressMethod, depth=depth+1,iterate=T,
+                              sizeFactors = "deconvolution", BPPARAM=withinRunsBPPARAM, ...)$assignments
+      }, BPPARAM=BPPARAM)
+      
+      #Replace errors (from pca not being able to be run in tiny clusters etc.) with lack of clustering
+      subassignments[sapply(subassignments, \(subcluster) length(subcluster) == 2)] = "1"
+      
+      #Add subcluster annotations
+      for (cluster in clustersToSubcluster[sapply(subassignments, \(subclusters) length(unique(subclusters))) > 1]){
+        finalAssignments[finalAssignments == cluster] = paste0(finalAssignments[finalAssignments == cluster], "_", subassignments[[as.character(cluster)]])
+      }
+      
+      #At top level assess cluster relationships
+      if(all(depth==1)){
+        #Compute cluster dendrogram
+        dendrogram = determineHierachy(as.matrix(jaccardDist), finalAssignments)
         
-        #Replace errors (from pca not being able to be run in tiny clusters etc.) with lack of clustering
-        subassignments[sapply(subassignments, \(subcluster) length(subcluster) == 2)] = "1"
-        
-        #Add subcluster annotations
-        for (cluster in clustersToSubcluster[sapply(subassignments, \(subclusters) length(unique(subclusters))) > 1]){
-          finalAssignments[finalAssignments == cluster] = paste0(finalAssignments[finalAssignments == cluster], "_", subassignments[[as.character(cluster)]])
-        }
-        
-        #At top level assess cluster relationships
-        if(all(depth==1)){
-          #Compute cluster dendrogram
-          dendrogram = determineHierachy(as.matrix(jaccardDist), finalAssignments)
-          
-          #Use clustree to visualise parent-child relationships
-          clustree = str_split(finalAssignments, "_")
-          maxlen <- max(lengths(clustree))
-          clustree = lapply(clustree, \(cell) c(if(length(cell) > 1){ c(cell[1], sapply(2:length(cell), \(res) 
-                                                                                        paste(cell[1:res], collapse ="_") ) )
-          } else { cell } , rep(NA, maxlen - length(cell))))  
-          clustree = as.data.frame(do.call(rbind, clustree))
-          if(ncol(clustree) > 1){
-            #Fill with previous depth if not subclustered
-            for(depth in 2:ncol(clustree)){
-              clustree[,depth] = coalesce2(clustree[,depth], clustree[,depth-1])
-            }
-            colnames(clustree) = gsub("V", "Cluster", colnames(clustree))
-            clustree = clustree(clustree, prefix = "Cluster")
-          } else {
-            clustree = NULL
+        #Use clustree to visualise parent-child relationships
+        clustree = str_split(finalAssignments, "_")
+        maxlen <- max(lengths(clustree))
+        clustree = lapply(clustree, \(cell) c(if(length(cell) > 1){ c(cell[1], sapply(2:length(cell), \(res) 
+                                                                                      paste(cell[1:res], collapse ="_") ) )
+                                                                      } else { cell } , rep(NA, maxlen - length(cell))))  
+        clustree = as.data.frame(do.call(rbind, clustree))
+        if(ncol(clustree) > 1){
+          #Fill with previous depth if not subclustered
+          for(depth in 2:ncol(clustree)){
+            clustree[,depth] = coalesce2(clustree[,depth], clustree[,depth-1])
           }
-        } else{
-          dendrogram = NULL
+          colnames(clustree) = gsub("V", "Cluster", colnames(clustree))
+          clustree = clustree(clustree, prefix = "Cluster")
+        } else {
           clustree = NULL
         }
-        
-      } else if (pval >= alpha) {
-        #Else if cluster assignments are no better than chance, then don't return assignments as likely overclustered
-        message("failed test")
-        finalAssignments = rep("1", length(finalAssignments))
+      } else{
         dendrogram = NULL
-      } else {
-        #If not iterating just compute dendrogram and return assignments
-        dendrogram = determineHierachy(as.matrix(jaccardDist), finalAssignments)
         clustree = NULL
       }
+      
     } else if (length(unique(finalAssignments)) == 1) {
       message("Failed Test")
       #Else if cluster assignments are no better than chance, then don't return assignments as likely overclustered
@@ -537,15 +528,16 @@
       dendrogram = determineHierachy(as.matrix(jaccardDist), finalAssignments)
       clustree = NULL
     }
+    
     }
   }
   
   #If there were no real clusters found, don't make a dendrogram or clustree
-  if(length(unique(finalAssignments)) == 1) {
-    finalAssignments = rep(1, length(finalAssignments))
-    dendrogram = NULL
-    clustree = NULL
-  }
+    if(length(unique(finalAssignments)) == 1) {
+      finalAssignments = rep(1, length(finalAssignments))
+      dendrogram = NULL
+      clustree = NULL
+    }
   
   return(list(assignments = finalAssignments, clusterDendrogram = dendrogram, clustree=clustree))
   
@@ -611,7 +603,7 @@ determineHierachy <- function(distanceMatrix, assignments, return = "hclust") {
   
   # Create a distance matrix for the clusters
   clusterDistanceMatrix <- matrix(0, nrow = length(unique(assignments)), 
-                                  ncol = length(unique(assignments)),
+                                    ncol = length(unique(assignments)),
                                   dimnames = list(unique(assignments), unique(assignments)))
   
   # Fill the cluster distance matrix with the distances between cluster centroids
@@ -684,14 +676,14 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale,
     } )
   
   if(all(is.na(pcaNull))){
-    return(1)
+    return(0)
   }
   
   rownames(pcaNull) = colnames(null)
   
   assignments = getClustAssignments( pcaNull, cellOrder = rownames(pcaNull),kNum=kNum,
                                      seed=seed, ...)
-
+  
   #Remove tiny clusters which it is hard to calculate silhouette for
   while(min(table(assignments) < kNum)){
     assignments[names(which.min(table(assignments)))] = names(which.max(table(assignments)))
@@ -703,7 +695,7 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale,
   }
   
   sil = mean(approxSilhouette(pcaNull, assignments)[,3], na.rm = T)
-  
+    
   return(sil)
 }
 
@@ -760,12 +752,12 @@ regressFeatures = function(normCounts, variablesToRegress,regressMethod, BPPARAM
     
     bplapply(genes, \(gene)
              residuals(object = glm(
-               formula = fmla,
-               family = 'poisson',
-               data = normCounts[,c(gene, colnames(variablesToRegress))]),
-               type = 'pearson'
-             ), BPPARAM=BPPARAM)
-    
+              formula = fmla,
+              family = 'poisson',
+              data = normCounts[,c(gene, colnames(variablesToRegress))]),
+              type = 'pearson'
+              ), BPPARAM=BPPARAM)
+             
     normCounts = do.call(cbind, residuals) 
     rownames(normCounts) = genes
   }
@@ -784,6 +776,7 @@ coalesce2 <- function(...) {
     x},
     list(...))
 }
+
 
 #' calculate 2-means cluster index (n x p matrices)
 #' @noRd
@@ -805,8 +798,10 @@ calc2CI <- function(x1, x2) {
   
 }
 
+
 #' calculate sum of squares
 #' @noRd
 #' @export
 #'
 sumsq <- function(x) { norm(sweep(x, 2, colMeans(x), "-"), "F")^2 }
+
