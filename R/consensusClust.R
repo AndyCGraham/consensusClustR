@@ -405,36 +405,55 @@
     
     if(any(silhouette <= silhouetteThresh, min(table(finalAssignments)<50))){
       
+      dend = determineHierachy(as.matrix(dist(pca)), finalAssignments)
+      splits = unlist(dend)
+      assignments = finalAssignments
+      
       #Make SCE object of variable features, and model paramters of these features, assuming they come from one distribution, with scDesign3
       sce = SingleCellExperiment(assays=list(counts = counts[variableFeaturesCounts, ]))
       if(!is.null(varsToRegress)){
-        colData(sce) = cbind( colData(sce), finalAssignments, varsToRegress)
+        colData(sce) = cbind( colData(sce), assignments, varsToRegress)
       } else {
-        colData(sce) = cbind( colData(sce), finalAssignments)
+        colData(sce) = cbind( colData(sce), assignments)
       }
       
-      colData(sce)$cell_type = rep(1)
+      colData(sce)$single = rep(1)
       
-      data <- construct_data(sce = sce, assay_use = "counts", celltype = "cell_type", pseudotime = NULL, spatial = NULL, 
-                             other_covariates = colnames(varsToRegress), corr_by = "1")
-      marginals <- fit_marginal(data = data, mu_formula = paste0("1+",colnames(varsToRegress)), , sigma_formula = "1", family_use = "nb", usebam = T, n_cores = 1)
-      copula <- fit_copula(sce = sce, assay_use = "counts", marginal_list = marginals, family_use = "nb", copula = "gaussian",
-          n_cores = 1, input_data = data$dat)
-      params <- extract_para(sce = sce, marginal_list = marginals, family_use = "nb", new_covariate = data$newCovariate,
-            data = data$dat, n_cores = 1)
+      #If more than one split, test each split in order
+      while(length(splits)>1){
+        assignments[assignments %in% splits[2:length(splits)]] = splits[2]
+        assignments = assignments[assignments %in% splits]
+        
+        data <- construct_data(sce = sce[,finalAssignments %in% splits], assay_use = "counts", celltype = "single", pseudotime = NULL, spatial = NULL, 
+                               other_covariates = colnames(varsToRegress), corr_by = "1")
+        marginals <- fit_marginal(data = data, mu_formula = "1", sigma_formula = "1", family_use = "nb", usebam = T, n_cores = 1)
+        copula <- fit_copula(sce = sce, assay_use = "counts", marginal_list = marginals, family_use = "nb", copula = "gaussian",
+                             n_cores = 1, input_data = data$dat)
+        params <- extract_para(sce = sce, marginal_list = marginals, family_use = "nb", new_covariate = data$newCovariate,
+                               data = data$dat, n_cores = 1)
       
-      # Generate null distribution for Silhouette score based on simulating a new dataset based on these single population paramters, 
-      # clustering, and calculating the silhouette score.
-      nullDist = unlist(bplapply(1:20, function(i) {
-        generateNullStatistic(sce, params, data, copula, pcNum=pcNum, varsToRegress = varsToRegress,regressMethod = regressMethod, 
-                              scale=scale, center = center, kNum=kNum, clusterFun = clusterFun, seed=seed)
-      }, BPPARAM = BPPARAM)) 
+        # Generate null distribution for Silhouette score based on simulating a new dataset based on these single population paramters, 
+        # clustering, and calculating the silhouette score.
+        nullDist = unlist(bplapply(1:20, function(i) {
+          generateNullStatistic(sce, params, data, copula, pcNum=pcNum, varsToRegress = varsToRegress,regressMethod = regressMethod, 
+                                resRange=resRange, scale=scale, center = center, kNum=kNum, clusterFun = clusterFun, seed=seed)
+        }, BPPARAM = BPPARAM)) 
       
-      # Test the statistical signifcance of the difference in silhouette scores between the NULL and real clusterings - are your clusters
-      # significantly better connected than those geneerated if we assume the data is truly from a single population?
-      silhouette = calc2CI(pca[finalAssignments == 1,], pca[finalAssignments == 2,])
-      fit <- fitdistr(nullDist,'normal')
-      pval <- pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
+        # Test the statistical signifcance of the difference in silhouette scores between the NULL and real clusterings - are your clusters
+        # significantly better connected than those geneerated if we assume the data is truly from a single population?
+        silhouette = mean(approxSilhouette(pca, assignments)[,3], na.rm = T)
+        fit <- fitdistr(nullDist,'normal')
+        pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
+        
+        #If failed test then reassign all remaining cells to the same cluster
+        if(pval >= alpha){
+          finalAssignments[finalAssignments %in% splits] = splits[1]
+          splits = splits[1]
+        } else{
+          #Otherwise test the next split
+          splits = splits[-1]
+        }
+      }
   
     } else {
       #If silhouette score is below the threshold, we can save time by assuming these clusters are real - adjust threshold to avoid this 
@@ -442,7 +461,7 @@
       pval = 0
     }
     #If subclusters are much better than those returned by chance keep subclustering until assignments are no better than chance
-    if(all(pval < alpha, iterate)){
+    if(all(length(unique(finalAssignments)) > 1, iterate)){
       clustersToSubcluster = unique(finalAssignments)[sapply(unique(finalAssignments), \(cluster) sum(finalAssignments == cluster)) > minSize]
       clustersToSubcluster = setNames(clustersToSubcluster, clustersToSubcluster)
       #Decide whether to parallelise the runs or functions within the runs, based on how many runs are needed
@@ -500,10 +519,9 @@
         clustree = NULL
       }
       
-    } else if (pval >= alpha) {
+    } else if (length(unique(finalAssignments)) == 1) {
       message("Failed Test")
       #Else if cluster assignments are no better than chance, then don't return assignments as likely overclustered
-      finalAssignments = rep("1", length(finalAssignments))
       dendrogram = NULL
     } else {
       #If not iterating just compute dendrogram and return assignments
@@ -622,7 +640,8 @@ determineHierachy <- function(distanceMatrix, assignments, return = "hclust") {
 #' @importFrom BiocParallel SerialParam
 #' @noRd
 #'
-generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale, center,varsToRegress,regressMethod, seed, ...) {
+generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale, 
+                                  kNum, center,varsToRegress,regressMethod, seed, ...) {
   
   # # #Simulate one group dataset based on count matrix
   null = simu_new(
@@ -662,14 +681,20 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale,
   
   rownames(pcaNull) = colnames(null)
   
-  assignments = getClustAssignments( pcaNull, cellOrder = rownames(pcaNull), resRange = seq.int(0.01, 3, length.out = 30), seed=seed, ...)
+  assignments = getClustAssignments( pcaNull, cellOrder = rownames(pcaNull),kNum=kNum,
+                                     seed=seed, ...)
   
-  #sil = if(all(length(unique(assignments)) > 1, min(table(assignments)) > 15, length(unique(assignments)) < length(assignments)/5 )){
-  #  mean(approxSilhouette(pcaNull, assignments)[,3], na.rm = T)
-  #} else {
-  #  0
-  #}
-  sil=calc2CI(pcaNull[assignments == 1,], pcaNull[assignments == 2,])
+  #Remove tiny clusters which it is hard to calculate silhouette for
+  while(min(table(assignments) < kNum)){
+    assignments[names(which.min(table(assignments)))] = names(which.max(table(assignments)))
+  }
+  
+  #Return a score of 0 if only 1 cluster
+  if(length(unique(assignments))< 2){
+    return(0)
+  }
+  
+  sil = mean(approxSilhouette(pcaNull, assignments)[,3], na.rm = T)
     
   return(sil)
 }
