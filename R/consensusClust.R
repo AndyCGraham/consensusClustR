@@ -406,7 +406,7 @@
     if(any(silhouette <= silhouetteThresh, min(table(finalAssignments)<50))){
       
       dend = determineHierachy(as.matrix(dist(pca)), finalAssignments)
-      splits = unlist(dend)
+      splits = unlist(labels(dend))
       assignments = finalAssignments
       
       #Make SCE object of variable features, and model paramters of these features, assuming they come from one distribution, with scDesign3
@@ -423,19 +423,20 @@
       while(length(splits)>1){
         assignments[assignments %in% splits[2:length(splits)]] = splits[2]
         assignments = assignments[assignments %in% splits]
+        sce_sub=sce[,finalAssignments %in% splits]
         
-        data <- construct_data(sce = sce[,finalAssignments %in% splits], assay_use = "counts", celltype = "single", pseudotime = NULL, spatial = NULL, 
+        data <- construct_data(sce = sce_sub, assay_use = "counts", celltype = "single", pseudotime = NULL, spatial = NULL, 
                                other_covariates = colnames(varsToRegress), corr_by = "1")
         marginals <- fit_marginal(data = data, mu_formula = "1", sigma_formula = "1", family_use = "nb", usebam = T, n_cores = 1)
-        copula <- fit_copula(sce = sce, assay_use = "counts", marginal_list = marginals, family_use = "nb", copula = "gaussian",
+        copula <- fit_copula(sce = sce_sub, assay_use = "counts", marginal_list = marginals, family_use = "nb", copula = "gaussian",
                              n_cores = 1, input_data = data$dat)
-        params <- extract_para(sce = sce, marginal_list = marginals, family_use = "nb", new_covariate = data$newCovariate,
+        params <- extract_para(sce = sce_sub, marginal_list = marginals, family_use = "nb", new_covariate = data$newCovariate,
                                data = data$dat, n_cores = 1)
       
         # Generate null distribution for Silhouette score based on simulating a new dataset based on these single population paramters, 
         # clustering, and calculating the silhouette score.
         nullDist = unlist(bplapply(1:20, function(i) {
-          generateNullStatistic(sce, params, data, copula, pcNum=pcNum, varsToRegress = varsToRegress,regressMethod = regressMethod, 
+          generateNullStatistic(sce_sub, params, data, copula, pcNum=pcNum, varsToRegress = varsToRegress,regressMethod = regressMethod, 
                                 resRange=resRange, scale=scale, center = center, kNum=kNum, clusterFun = clusterFun, seed=seed)
         }, BPPARAM = BPPARAM)) 
       
