@@ -406,55 +406,20 @@
     if(any(silhouette <= silhouetteThresh, min(table(finalAssignments)<50))){
       
       dend = determineHierachy(as.matrix(dist(pca)), finalAssignments)
-      splits = unlist(labels(dend))
-      assignments = finalAssignments
       
       #Make SCE object of variable features, and model paramters of these features, assuming they come from one distribution, with scDesign3
       sce = SingleCellExperiment(assays=list(counts = counts[variableFeaturesCounts, ]))
       if(!is.null(varsToRegress)){
-        colData(sce) = cbind( colData(sce), assignments, varsToRegress)
-      } else {
-        colData(sce) = cbind( colData(sce), assignments)
+        colData(sce) = cbind( colData(sce), varsToRegress)
       }
       
       colData(sce)$single = rep(1)
       
       #If more than one split, test each split in order
-      while(length(splits)>1){
-        assignments[assignments %in% splits[2:length(splits)]] = splits[2]
-        assignments = assignments[assignments %in% splits]
-        sce_sub=sce[,finalAssignments %in% splits]
-        
-        data <- construct_data(sce = sce_sub, assay_use = "counts", celltype = "single", pseudotime = NULL, spatial = NULL, 
-                               other_covariates = colnames(varsToRegress), corr_by = "1")
-        marginals <- fit_marginal(data = data, mu_formula = "1", sigma_formula = "1", family_use = "nb", usebam = T, n_cores = 1)
-        copula <- fit_copula(sce = sce_sub, assay_use = "counts", marginal_list = marginals, family_use = "nb", copula = "gaussian",
-                             n_cores = 1, input_data = data$dat)
-        params <- extract_para(sce = sce_sub, marginal_list = marginals, family_use = "nb", new_covariate = data$newCovariate,
-                               data = data$dat, n_cores = 1)
-      
-        # Generate null distribution for Silhouette score based on simulating a new dataset based on these single population paramters, 
-        # clustering, and calculating the silhouette score.
-        nullDist = unlist(bplapply(1:20, function(i) {
-          generateNullStatistic(sce_sub, params, data, copula, pcNum=pcNum, varsToRegress = varsToRegress,regressMethod = regressMethod, 
-                                resRange=resRange, scale=scale, center = center, kNum=kNum, clusterFun = clusterFun, seed=seed)
-        }, BPPARAM = BPPARAM)) 
-      
-        # Test the statistical signifcance of the difference in silhouette scores between the NULL and real clusterings - are your clusters
-        # significantly better connected than those geneerated if we assume the data is truly from a single population?
-        silhouette = mean(approxSilhouette(pca, assignments)[,3], na.rm = T)
-        fit <- fitdistr(nullDist,'normal')
-        pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
-        
-        #If failed test then reassign all remaining cells to the same cluster
-        if(pval >= alpha){
-          finalAssignments[finalAssignments %in% splits] = splits[1]
-          splits = splits[1]
-        } else{
-          #Otherwise test the next split
-          splits = splits[-1]
-        }
-      }
+      #Iterate/Walk the dendrogram
+      finalAssignments <- testSplits(sce, pca = pca, dend, kNum, alpha, finalAssignments, varsToRegress, BPPARAM=BPPARAM,
+                                regressMethod = regressMethod, resRange=resRange, scale=scale, center = center, 
+                                clusterFun = clusterFun, seed=seed, pcNum = pcNum, silhouetteThresh=silhouetteThresh)
   
     } else {
       #If silhouette score is below the threshold, we can save time by assuming these clusters are real - adjust threshold to avoid this 
@@ -604,7 +569,7 @@ getClustAssignments <- function(pca, pcNum, clusterFun="leiden", resRange, kNum,
 #' @param assignments clustering assignments
 #' 
 #' @export
-determineHierachy <- function(distanceMatrix, assignments, return = "hclust") {
+determineHierachy <- function(distanceMatrix, assignments, return = "dendrogram") {
   
   # Create a distance matrix for the clusters
   clusterDistanceMatrix <- matrix(0, nrow = length(unique(assignments)), 
@@ -631,13 +596,31 @@ determineHierachy <- function(distanceMatrix, assignments, return = "hclust") {
   clusterDistanceMatrix = as.dist(clusterDistanceMatrix)
   
   # Perform hierarchical clustering on the cluster distance matrix
-  hclustRes <- as.dendrogram(hclust(clusterDistanceMatrix, method = "complete"))
+  hclustRes <- hclust(clusterDistanceMatrix, method = "complete")
   
-  return(hclustRes)
+  if(return == "hclust"){
+    return(hclustRes)
+  }
+  
+  dend = as.dendrogram(hclustRes)
+  
+  return(dend)
 }
 
 
 #' Generate a null count matrix from a scDesign3 paramters, process and cluster, and return the silhouette score of the clustering
+#' @param sce  Single Cell experiment object
+#' @param my_para scDesign paramter object
+#' @param my_para scDesign paramter object
+#' @param my_data scDesign data object
+#' @param my_copula scDesign copula object
+#' @param pcNum number of PC's
+#' @param scale Logical - whether to scale null data prior to PCA
+#' @param kNum Clustering kNum
+#' @param center Logical - whether to center null data prior to PCA
+#' @param varsToRegress Dataframe containing variables to regress in columns
+#' @param seed Random seed number. Default: 123.
+#' 
 #' @importFrom bluster approxSilhouette
 #' @importFrom irlba prcomp_irlba
 #' @importFrom scDesign3 simu_new
@@ -645,8 +628,8 @@ determineHierachy <- function(distanceMatrix, assignments, return = "hclust") {
 #' @importFrom BiocParallel SerialParam
 #' @noRd
 #'
-generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale, 
-                                  kNum, center,varsToRegress,regressMethod, seed, ...) {
+generateNullStatistic <- function(sce, my_para, my_data, my_copula, pcNum, scale, 
+                                  kNum, center,varsToRegress, seed=123, ...) {
   
   # # #Simulate one group dataset based on count matrix
   null = simu_new(
@@ -668,8 +651,8 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula,pcNum, scale,
   null = shifted_log_transform(null, size_factors = "deconvolution", pseudo_count = 1)
   if(!is.null(varsToRegress)){
     varsToRegress[1:nrow(varsToRegress), 1:ncol(varsToRegress)] = as.data.frame(colData(sce)[,colnames(colData(sce)) %in% colnames(varsToRegress)])[1:nrow(varsToRegress), 1:ncol(varsToRegress)] 
-    null = regressFeatures(null, varsToRegress, 
-                           regressMethod = regressMethod, BPPARAM = SerialParam(RNGseed = seed), seed=seed)
+    null = regressFeatures(null, regressMethod="lm", BPPARAM = SerialParam(RNGseed = seed), 
+                           seed=seed,variablesToRegress = varsToRegress)
   }
   
   pcaNull = tryCatch(
@@ -770,6 +753,91 @@ regressFeatures = function(normCounts, variablesToRegress,regressMethod, BPPARAM
   return(normCounts)
 }
 
+#' Generate a null count matrix from a scDesign3 paramters, process and cluster, and return the silhouette score of the clustering
+#' @importFrom bluster approxSilhouette
+#' @importFrom scDesign3 construct_data fit_marginal  fit_copula  extract_para
+#' @importFrom dplyr case_match
+#' @importFrom dendextend cutree
+#' @export
+#'
+#' 
+testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegress, BPPARAM, 
+                       silhouetteThresh, ...) {
+  
+  cccm <- cophenetic(dend)
+  sps <- sort(unique(cccm), decreasing = T)
+  
+  membership <- cutree(dend, h= floor(sps[1])) #Cut the tree at splitting points
+  
+  #Rename assignments to reflect only the current split
+  assignments = case_match(as.character(finalAssignments), 
+                           labels(membership[membership==1]) ~ "a", .default = "b") 
+  
+  silhouette = mean(approxSilhouette(pca, assignments)[,3], na.rm = T)
+  
+  if(silhouette <= silhouetteThresh){
+    
+    data <- construct_data(sce = sce, assay_use = "counts", celltype = "single", pseudotime = NULL, 
+                           spatial = NULL, other_covariates = colnames(varsToRegress), 
+                           corr_by = "1", parallelization="bpmapply", 
+                           BPPARAM = BPPARAM)
+    marginals <- fit_marginal(data = data, mu_formula = "1", sigma_formula = "1", family_use = "nb", 
+                              usebam = T, parallelization="bpmapply", 
+                              BPPARAM = BPPARAM)
+    copula <- fit_copula(sce = sce, assay_use = "counts", marginal_list = marginals, family_use = "nb", copula = "gaussian",
+                         input_data = data$dat, parallelization="bpmapply", 
+                         BPPARAM = BPPARAM)
+    params <- extract_para(sce = sce, marginal_list = marginals, family_use = "nb", 
+                           new_covariate = data$newCovariate, data = data$dat, parallelization="bpmapply", 
+                           BPPARAM = BPPARAM)
+    
+    # Generate null distribution for Silhouette score based on simulating a new dataset based on these single population paramters, 
+    # clustering, and calculating the silhouette score.
+    nullDist = unlist(bplapply(1:20, function(i) {
+      generateNullStatistic(sce=sce, params, data, copula, kNum=kNum,
+                            varsToRegress = varsToRegress, ...)
+    }, BPPARAM = BPPARAM)) 
+    
+    # Test the statistical signifcance of the difference in silhouette scores between the NULL and real clusterings - are your clusters
+    # significantly better connected than those geneerated if we assume the data is truly from a single population?
+    fit <- fitdistr(nullDist,'normal')
+    pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
+    
+    #If failed test then reassign all remaining cells to the same cluster
+    if(pval >= alpha){
+      finalAssignments = rep(names(sort(table(finalAssignments),decreasing=TRUE)[1]), length(finalAssignments))
+      return(finalAssignments)
+    } 
+  }
+  
+  #Otherwise test the next split(s)
+  dend <- cut(dend, h=sps[1])$lower
+  if(is.list(dend[[1]])){
+    newVarsToRegress = as.data.frame(varsToRegress[finalAssignments %in% labels(dend[[1]]),])
+    colnames(newVarsToRegress) = colnames(varsToRegress)
+    finalAssignments[finalAssignments %in% labels(dend[[1]])] = 
+      testSplits(sce[,finalAssignments %in% labels(dend[[1]])], pca[finalAssignments %in% labels(dend[[1]]),],
+                 dend[[1]], kNum, alpha, finalAssignments[finalAssignments %in% labels(dend[[2]])],
+                 varsToRegress = newVarsToRegress, BPPARAM = BPPARAM,
+                 silhouetteThresh=silhouetteThresh, ...)
+  } else {
+    finalAssignments[finalAssignments %in% labels(dend[[1]])] = labels(dend[[1]])
+  }
+  
+  if(is.list(dend[[2]])){
+    newVarsToRegress = as.data.frame(varsToRegress[finalAssignments %in% labels(dend[[2]]),])
+    colnames(newVarsToRegress) = colnames(varsToRegress)
+    finalAssignments[finalAssignments %in% labels(dend[[2]])] = 
+      testSplits(sce[,finalAssignments %in% labels(dend[[2]])], pca[finalAssignments %in% labels(dend[[2]]),], 
+                 dend[[2]], kNum, alpha, finalAssignments[finalAssignments %in% labels(dend[[2]])],
+                 varsToRegress = newVarsToRegress, BPPARAM = BPPARAM,
+                 silhouetteThresh=silhouetteThresh, ...)
+  } else {
+    finalAssignments[finalAssignments %in% labels(dend[[2]])] = labels(dend[[2]])
+  }
+  return(finalAssignments)
+}
+
 
 #' Given two vectors of equal length, replaces missing values in the first with values at the same indices in the second
 #' @noRd
@@ -783,30 +851,4 @@ coalesce2 <- function(...) {
 }
 
 
-#' calculate 2-means cluster index (n x p matrices)
-#' @noRd
-#' @export
-#'
-calc2CI <- function(x1, x2) {
-  
-  if (is.matrix(x1) && is.matrix(x2) && ncol(x1) == ncol(x2)) {
-    
-    (sumsq(x1) + sumsq(x2)) / sumsq(rbind(x1, x2))
-    
-  } else {
-    
-    stop(paste("x1, x2 must be matrices with same ncols",
-               
-               "for 2CI calculation"))
-    
-  }     
-  
-}
-
-
-#' calculate sum of squares
-#' @noRd
-#' @export
-#'
-sumsq <- function(x) { norm(sweep(x, 2, colMeans(x), "-"), "F")^2 }
 
