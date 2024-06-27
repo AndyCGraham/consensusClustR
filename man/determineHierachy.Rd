@@ -4,7 +4,7 @@
 \alias{determineHierachy}
 \title{Computes dendrogram between clusters}
 \usage{
-determineHierachy(distanceMatrix, assignments, return = "hclust")
+determineHierachy(distanceMatrix, assignments, return = "dendrogram")
 }
 \arguments{
 \item{distanceMatrix}{Matrix of cell-cell distances}
