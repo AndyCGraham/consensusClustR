@@ -783,13 +783,13 @@ testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegr
                            BPPARAM = BPPARAM)
     marginals <- fit_marginal(data = data, mu_formula = "1", sigma_formula = "1", family_use = "nb", 
                               usebam = T, parallelization="bpmapply", 
-                              BPPARAM = BPPARAM)
+                              BPPARAM = BPPARAM, n_cores=BPPARAM$workers)
     copula <- fit_copula(sce = sce, assay_use = "counts", marginal_list = marginals, family_use = "nb", copula = "gaussian",
                          input_data = data$dat, parallelization="bpmapply", 
-                         BPPARAM = BPPARAM)
+                         BPPARAM = BPPARAM, n_cores=BPPARAM$workers)
     params <- extract_para(sce = sce, marginal_list = marginals, family_use = "nb", 
                            new_covariate = data$newCovariate, data = data$dat, parallelization="bpmapply", 
-                           BPPARAM = BPPARAM)
+                           BPPARAM = BPPARAM, n_cores=BPPARAM$workers)
     
     # Generate null distribution for Silhouette score based on simulating a new dataset based on these single population paramters, 
     # clustering, and calculating the silhouette score.
