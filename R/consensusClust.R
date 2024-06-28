@@ -761,8 +761,8 @@ regressFeatures = function(normCounts, variablesToRegress,regressMethod, BPPARAM
 #' @export
 #'
 #' 
-testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegress, BPPARAM, 
-                       silhouetteThresh, ...) {
+testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegress, 
+                       BPPARAM, silhouetteThresh, ...) {
   
   cccm <- cophenetic(dend)
   sps <- sort(unique(cccm), decreasing = T)
@@ -803,28 +803,39 @@ testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegr
     fit <- fitdistr(nullDist,'normal')
     pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
     
-    #If failed test then reassign all remaining cells to the same cluster
+    #If failed test then merge split cluster(s) to closest cluster
     if(pval >= alpha){
-      finalAssignments = rep(names(sort(table(finalAssignments),decreasing=TRUE)[1]), length(finalAssignments))
-      return(finalAssignments)
+      names(assignments) = finalAssignments
+      clusts_to_merge = unique(names(assignments[assignments == names(which.min(table(assignments)))]))
+      #Join clusters to merge into one cluster if there is multiple
+      if(length(clusts_to_merge) > 1){
+        finalAssignments[finalAssignments %in% clusts_to_merge] = names(which.max(table(finalAssignments[finalAssignments %in% clusts_to_merge])))
+      }
+      clustDist = determineHierachy(as.matrix(dist(pca)), finalAssignments, return = "distance")
+      diag(clustDist) = max(clustDist) + 1
+      finalAssignments[finalAssignments %in% clusts_to_merge] = colnames(clustDist)[which.min(clustDist[rownames(clustDist) %in% clusts_to_merge,])]
+      #If this merges all clusters, then return failed test
+      if(length(unique(finalAssignments))==1){
+        return(finalAssignments)
+      }
     } 
   }
   
-  #Otherwise test the next split(s)
+  #Otherwise test the next split(s) (ignoring splits containing merged clusters)
   dend <- cut(dend, h=sps[1])$lower
-  if(is.list(dend[[1]])){
+  if(all(is.list(dend[[1]]), labels(dend[[1]]) %in% finalAssignments)){
     newVarsToRegress = as.data.frame(varsToRegress[finalAssignments %in% labels(dend[[1]]),])
     colnames(newVarsToRegress) = colnames(varsToRegress)
     finalAssignments[finalAssignments %in% labels(dend[[1]])] = 
       testSplits(sce[,finalAssignments %in% labels(dend[[1]])], pca[finalAssignments %in% labels(dend[[1]]),],
-                 dend[[1]], kNum, alpha, finalAssignments[finalAssignments %in% labels(dend[[2]])],
+                 dend[[1]], kNum, alpha, finalAssignments[finalAssignments %in% labels(dend[[1]])],
                  varsToRegress = newVarsToRegress, BPPARAM = BPPARAM,
                  silhouetteThresh=silhouetteThresh, ...)
   } else {
     finalAssignments[finalAssignments %in% labels(dend[[1]])] = labels(dend[[1]])
   }
   
-  if(is.list(dend[[2]])){
+  if(all(is.list(dend[[2]]), labels(dend[[2]]) %in% finalAssignments)){
     newVarsToRegress = as.data.frame(varsToRegress[finalAssignments %in% labels(dend[[2]]),])
     colnames(newVarsToRegress) = colnames(varsToRegress)
     finalAssignments[finalAssignments %in% labels(dend[[2]])] = 
