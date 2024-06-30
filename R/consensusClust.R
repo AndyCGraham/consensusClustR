@@ -110,12 +110,11 @@
 #' results = consensusClust(sce, pcNum = 5, iterate = T)
 #' 
   consensusClust <- function(counts, iterate=FALSE, alpha=0.05, pca=NULL, pcNum="find", pcaMethod = "irlba", scale=T, center=T, 
-                                    sizeFactors="deconvolution", variableFeatures=NULL, nVarFeatures=2000, varsToRegress=NULL, 
-                                    regressMethod = "lm", skipFirstRegression=F, nboots=100, bootSize=0.9, 
-                                  clusterFun="leiden", resRange = c(0.01, 0.03, 0.05, 0.07, 0.10, seq.int(0.11, 1.5, length.out=10)),
-                                  kNum=30, silhouetteThresh = 0.4, minSize = 50, assay="RNA", mode = "robust", 
-                                  BPPARAM=SerialParam(RNGseed = seed), seed=123, depth=1, minStability=0.25, 
-                             pcVar = 0.2, ...) {
+                             sizeFactors="deconvolution", variableFeatures=NULL, nVarFeatures=2000, varsToRegress=NULL, 
+                             clusterFun="leiden", resRange = c(0.01, 0.03, 0.05, 0.07, 0.10, seq.int(0.11, 1.5, length.out=10)), 
+                             kNum=30, silhouetteThresh = 0.4, minSize = 50, assay="RNA", mode = "robust", 
+                             BPPARAM=SerialParam(RNGseed = seed), seed=123, depth=1, minStability=0.25, 
+                             pcVar = 0.25, ...) {
   
   #Check inputs are correct
   stopifnot("`counts` must be a matrix, sparse matrix of type dgCMatrix, seurat object, or single-cell experiment object." = 
@@ -344,15 +343,15 @@
   
   ##Cluster adjacency graph at different resolutions
   if(clusterFun=="leiden"){
-    finalAssignments = lapply(resRange, \(res){
+    finalAssignments = bplapply(resRange, \(res){
       cluster_leiden(snnGraph, objective_function = "modularity", resolution_parameter = res, 
                      beta = 0.01, n_iterations = 2)$membership 
-    })
+    }, BPPARAM = BPPARAM )
   } else if(clusterFun=="louvain"){
-    finalAssignments = lapply(resRange, \(res){
+    finalAssignments = bplapply(resRange, \(res){
       cluster_louvain(snnGraph, objective_function = "modularity", resolution_parameter = res, 
                      beta = 0.01, n_iterations = 2)$membership 
-    })
+    }, BPPARAM = BPPARAM )
   }
   
   #Assess silhouette score per cluster for every resolution
@@ -449,9 +448,10 @@
           kNum=15
         }
         consensusClust(counts[,finalAssignments == cluster], pcaMethod=pcaMethod, nboots=nboots, clusterFun=clusterFun,
-                              bootSize=bootSize, resRange = resRange, kNum=kNum, mode = mode, variableFeatures=NULL,
-                              scale=scale, varsToRegress=newVarsToRegress, regressMethod=regressMethod, depth=depth+1,iterate=T,
-                              sizeFactors = "deconvolution", BPPARAM=withinRunsBPPARAM, ...)$assignments
+                       bootSize=bootSize, resRange = resRange, kNum=kNum, mode = mode, variableFeatures=NULL, 
+                       scale=scale, varsToRegress=newVarsToRegress, regressMethod=regressMethod, depth=depth+1,iterate=T, 
+                       sizeFactors="deconvolution", BPPARAM=withinRunsBPPARAM, pcVar=pcVar,
+                       minStability=minStability, ...)$assignments
       }, BPPARAM=BPPARAM)
       
       #Replace errors (from pca not being able to be run in tiny clusters etc.) with lack of clustering
@@ -709,7 +709,7 @@ regressFeatures = function(normCounts, variablesToRegress,regressMethod, BPPARAM
     geneOrder = rownames(normCounts)
     geneChunks = split(rownames(normCounts), ceiling(seq_along(rownames(normCounts))/(nrow(normCounts)/BPPARAM$workers)))
     geneChunks = bplapply(geneChunks, function(genes){
-      res = lapply(genes, \(gene) qr.resid(qr = qr, y = normCounts[gene,]) )
+      res = bplapply(genes, \(gene) qr.resid(qr = qr, y = normCounts[gene,]) )
       normData = do.call(rbind,  res)
       rownames(normData) = genes
       return(normData)
@@ -767,7 +767,9 @@ testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegr
   cccm <- cophenetic(dend)
   sps <- sort(unique(cccm), decreasing = T)
   
-  membership <- cutree(dend, h= floor(sps[1])) #Cut the tree at splitting points
+  split = 1
+  membership <- cutree(dend, h=floor(sps[split])) #Cut the tree at first splitting point
+  
   
   #Rename assignments to reflect only the current split
   assignments = case_match(as.character(finalAssignments), 
@@ -803,21 +805,34 @@ testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegr
     fit <- fitdistr(nullDist,'normal')
     pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
     
-    #If failed test then merge split cluster(s) to closest cluster
+    #If failed test then merge split cluster(s) to closest cluster and test next split if there's one
     if(pval >= alpha){
-      names(assignments) = finalAssignments
-      clusts_to_merge = unique(names(assignments[assignments == names(which.min(table(assignments)))]))
-      #Join clusters to merge into one cluster if there is multiple
-      if(length(clusts_to_merge) > 1){
-        finalAssignments[finalAssignments %in% clusts_to_merge] = names(which.max(table(finalAssignments[finalAssignments %in% clusts_to_merge])))
+      while(all(pval < alpha, split <= length(sps))){
+        names(assignments) = finalAssignments
+        clusts_to_merge = unique(names(assignments[assignments == names(which.min(table(assignments)))]))
+        #Join clusters to merge into one cluster if there is multiple
+        if(length(clusts_to_merge) > 1){
+          finalAssignments[finalAssignments %in% clusts_to_merge] = names(which.max(table(finalAssignments[finalAssignments %in% clusts_to_merge])))
+        }
+        clustDist = determineHierachy(as.matrix(dist(pca)), finalAssignments, return = "distance")
+        diag(clustDist) = max(clustDist) + 1
+        finalAssignments[finalAssignments %in% clusts_to_merge] = colnames(clustDist)[which.min(clustDist[rownames(clustDist) %in% clusts_to_merge,])]
+        split = split + 1
+        
+        if(length(sps)>=split){ #Test another split with same null dist if there's more
+          membership <- cutree(dend, h=floor(sps[split])) #Cut the tree at lower splitting point
+          #Rename assignments to reflect only the current split
+          assignments = case_match(as.character(finalAssignments), 
+                                   labels(membership[membership==1]) ~ "a", .default = "b") 
+          
+          silhouette = mean(approxSilhouette(pca, assignments)[,3], na.rm = T)
+          pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
+        }
       }
-      clustDist = determineHierachy(as.matrix(dist(pca)), finalAssignments, return = "distance")
-      diag(clustDist) = max(clustDist) + 1
-      finalAssignments[finalAssignments %in% clusts_to_merge] = colnames(clustDist)[which.min(clustDist[rownames(clustDist) %in% clusts_to_merge,])]
       #If this merges all clusters, then return failed test
       if(length(unique(finalAssignments))==1){
         return(finalAssignments)
-      }
+      }  
     } 
   }
   
