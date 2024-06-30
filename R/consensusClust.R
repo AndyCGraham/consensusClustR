@@ -111,7 +111,8 @@
 #' 
   consensusClust <- function(counts, iterate=FALSE, alpha=0.05, pca=NULL, pcNum="find", pcaMethod = "irlba", scale=T, center=T, 
                              sizeFactors="deconvolution", variableFeatures=NULL, nVarFeatures=2000, varsToRegress=NULL, 
-                             clusterFun="leiden", resRange = c(0.01, 0.03, 0.05, 0.07, 0.10, seq.int(0.11, 1.5, length.out=10)), 
+                             regressMethod = "lm", skipFirstRegression=F, nboots=100, bootSize=0.9, 
+                             clusterFun="leiden", resRange = c(0.01, 0.03, 0.05, 0.07, 0.10, seq.int(0.11, 1.5, length.out=10)),
                              kNum=30, silhouetteThresh = 0.4, minSize = 50, assay="RNA", mode = "robust", 
                              BPPARAM=SerialParam(RNGseed = seed), seed=123, depth=1, minStability=0.25, 
                              pcVar = 0.25, ...) {
