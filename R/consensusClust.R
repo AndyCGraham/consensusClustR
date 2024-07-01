@@ -808,7 +808,7 @@ testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegr
     
     #If failed test then merge split cluster(s) to closest cluster and test next split if there's one
     if(pval >= alpha){
-      while(all(pval < alpha, split <= length(sps))){
+      while(all(pval >= alpha, split <= length(sps))){
         names(assignments) = finalAssignments
         clusts_to_merge = unique(names(assignments[assignments == names(which.min(table(assignments)))]))
         #Join clusters to merge into one cluster if there is multiple
