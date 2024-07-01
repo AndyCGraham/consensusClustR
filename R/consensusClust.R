@@ -449,7 +449,8 @@
         sizeFactors = sizeFactors[finalAssignments == cluster]
         #Reduce kNum for small clusters
         if(sum(finalAssignments == cluster) < 400){
-          kNum=15
+          kNum=min(min(kNum), 15)
+          pcVar=min(pcVar, 0.2)
         }
         consensusClust(counts[,finalAssignments == cluster], pcaMethod=pcaMethod, nboots=nboots, clusterFun=clusterFun,
                        bootSize=bootSize, resRange = resRange, kNum=kNum, mode = mode, variableFeatures=NULL, 
