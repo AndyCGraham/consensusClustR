@@ -337,7 +337,7 @@
   #Calculate distance matrix
   jaccardDist = 1-parDist(clustAssignments, method="custom", func = jaccardDist, threads = BPPARAM$workers) 
   
-  lapply(kNum, function(k){
+  finalAssignments = unlist(lapply(kNum, function(k){
     ##Adjacency graph from similarity matrix
     knn = kNN(jaccardDist, k = k, search = "kdtree")$id
     snnGraph = neighborsToSNNGraph(knn, type = "rank")
@@ -354,7 +354,8 @@
                         beta = 0.01, n_iterations = 2)$membership 
       }, BPPARAM = BPPARAM )
     }
-  })
+    return(finalAssignments)
+  }), recursive = F)
   
   
   #Assess silhouette score per cluster for every resolution
