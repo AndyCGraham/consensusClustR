@@ -536,7 +536,7 @@ getClustAssignments <- function(pca, pcNum, clusterFun="leiden", resRange, kNum,
   clustAssignments = unlist(lapply(kNum, function(k){
     lapply(resRange, function(res){
       assignments = suppressWarnings( setNames(
-        clusterRows(pca, BLUSPARAM=NNGraphParam(k=kNum, cluster.fun=clusterFun, cluster.args=list(resolution=res))),
+        clusterRows(pca, BLUSPARAM=NNGraphParam(k=k, cluster.fun=clusterFun, cluster.args=list(resolution=res))),
         rownames(pca) 
       ) )
       
