@@ -113,7 +113,7 @@
                              sizeFactors="deconvolution", variableFeatures=NULL, nVarFeatures=2000, varsToRegress=NULL, 
                              regressMethod = "lm", skipFirstRegression=F, nboots=100, bootSize=0.9, 
                              clusterFun="leiden", resRange = c(0.01, 0.03, 0.05, 0.07, 0.10, seq.int(0.11, 1.5, length.out=10)),
-                             kNum=30, silhouetteThresh = 0.4, minSize = 50, assay="RNA", mode = "robust", 
+                             kNum=c(15,20,25,30), silhouetteThresh = 0.4, minSize = 50, assay="RNA", mode = "robust", 
                              BPPARAM=SerialParam(RNGseed = seed), seed=123, depth=1, minStability=0.25, 
                              pcVar = 0.25, ...) {
   
@@ -138,8 +138,8 @@
               all((length(bootSize)==1) & (is.numeric(bootSize))) )
   stopifnot("`resRange` must be a numeric vector." = 
               is.numeric(resRange) )
-  stopifnot("`kNum` must be a positive integer." = 
-              all((kNum%%1==0) & (kNum > 0)))
+  stopifnot("`kNum` must be a positive integer or vector of integers." = 
+              any(is.numeric(kNum), all((kNum%%1==0) & (kNum > 0))))
   stopifnot("`mode` must be either 'robust' or 'granular'." = 
               mode %in% c("robust", "granular") )
   
@@ -320,7 +320,6 @@
   
   #Remove normCounts and deviance if present
   suppressWarnings( rm(normCounts) )
-  gc(verbose = F)
   
   #Alter NAs to -1, which will be ignored by the distance function
   clustAssignments[is.na(clustAssignments)] = -1
@@ -338,22 +337,25 @@
   #Calculate distance matrix
   jaccardDist = 1-parDist(clustAssignments, method="custom", func = jaccardDist, threads = BPPARAM$workers) 
   
-  ##Adjacency graph from similarity matrix
-  knn = kNN(jaccardDist, k = kNum, search = "kdtree")$id
-  snnGraph = neighborsToSNNGraph(knn, type = "rank")
+  lapply(kNum, function(k){
+    ##Adjacency graph from similarity matrix
+    knn = kNN(jaccardDist, k = k, search = "kdtree")$id
+    snnGraph = neighborsToSNNGraph(knn, type = "rank")
+    
+    ##Cluster adjacency graph at different resolutions
+    if(clusterFun=="leiden"){
+      finalAssignments = bplapply(resRange, \(res){
+        cluster_leiden(snnGraph, objective_function = "modularity", resolution_parameter = res, 
+                       beta = 0.01, n_iterations = 2)$membership 
+      }, BPPARAM = BPPARAM )
+    } else if(clusterFun=="louvain"){
+      finalAssignments = bplapply(resRange, \(res){
+        cluster_louvain(snnGraph, objective_function = "modularity", resolution_parameter = res, 
+                        beta = 0.01, n_iterations = 2)$membership 
+      }, BPPARAM = BPPARAM )
+    }
+  })
   
-  ##Cluster adjacency graph at different resolutions
-  if(clusterFun=="leiden"){
-    finalAssignments = bplapply(resRange, \(res){
-      cluster_leiden(snnGraph, objective_function = "modularity", resolution_parameter = res, 
-                     beta = 0.01, n_iterations = 2)$membership 
-    }, BPPARAM = BPPARAM )
-  } else if(clusterFun=="louvain"){
-    finalAssignments = bplapply(resRange, \(res){
-      cluster_louvain(snnGraph, objective_function = "modularity", resolution_parameter = res, 
-                     beta = 0.01, n_iterations = 2)$membership 
-    }, BPPARAM = BPPARAM )
-  }
   
   #Assess silhouette score per cluster for every resolution
   clustScores = rank(unlist(lapply(finalAssignments, \(res){
@@ -390,7 +392,7 @@
     }
     
     #Merge clusters so small it's hard to assess their seperation to the nearest cluster
-    while(min(table(finalAssignments)) < kNum){
+    while(min(table(finalAssignments)) < kNum[1]){
       clustDist = determineHierachy(as.matrix(jaccardDist), finalAssignments, return = "distance")
       diag(clustDist) = 1
       finalAssignments[finalAssignments == names(which.min(table(finalAssignments)))] = 
@@ -531,29 +533,32 @@
 getClustAssignments <- function(pca, pcNum, clusterFun="leiden", resRange, kNum, mode = "robust", cellOrder, seed, ...) {
   
   #Cluster adjacency matrix, returning assignments named by cell name
-  clustAssignments = lapply(resRange, function(res){
-    assignments = suppressWarnings( setNames(
-      clusterRows(pca, BLUSPARAM=NNGraphParam(k=kNum, cluster.fun=clusterFun, cluster.args=list(resolution=res))),
-      rownames(pca) 
-    ) )
-    
-    if(mode == "robust"){
-      if(length(unique(assignments))>1){
-        clustScore = mean(approxSilhouette(pca, assignments)[,3], na.rm = T)
-      } else {
-        clustScore = 0.15
+  clustAssignments = unlist(lapply(kNum, function(k){
+    lapply(resRange, function(res){
+      assignments = suppressWarnings( setNames(
+        clusterRows(pca, BLUSPARAM=NNGraphParam(k=kNum, cluster.fun=clusterFun, cluster.args=list(resolution=res))),
+        rownames(pca) 
+      ) )
+      
+      if(mode == "robust"){
+        if(length(unique(assignments))>1){
+          clustScore = mean(approxSilhouette(pca, assignments)[,3], na.rm = T)
+        } else {
+          clustScore = 0.15
+        }
+        
       }
       
-    }
+      assignments = assignments[match(cellOrder, names(assignments))]
+      
+      if(mode == "robust"){
+        return(list(assignments, clustScore))
+      } else{
+        return(assignments)
+      }
+    })
+  } ), recursive=FALSE)
     
-    assignments = assignments[match(cellOrder, names(assignments))]
-    
-    if(mode == "robust"){
-      return(list(assignments, clustScore))
-    } else{
-      return(assignments)
-    }
-  })
   
   if(mode == "robust"){
     clustScores = rank(unlist(lapply(clustAssignments, \(res) res[[2]] )), ties.method ="first")
@@ -674,7 +679,7 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula, pcNum, scale
                                      seed=seed, ...)
   
   #Remove tiny clusters which it is hard to calculate silhouette for
-  while(min(table(assignments) < kNum)){
+  while(min(table(assignments) < kNum[1])){
     assignments[names(which.min(table(assignments)))] = names(which.max(table(assignments)))
   }
   
