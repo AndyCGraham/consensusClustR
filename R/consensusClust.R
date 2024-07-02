@@ -405,9 +405,9 @@
     }
   } else {
       #If not bootstrapping just iterate over kNums and resRange and return highest silhouette score
-      finalAssignments = getClustAssignments( pca, resRange = resRange, kNum=kNum, 
+      finalAssignments = as.character(getClustAssignments( pca, resRange = resRange, kNum=kNum, 
                                               clusterFun = clusterFun, cellOrder = rownames(pca), 
-                                              mode = "robust", seed=seed )
+                                              mode = "robust", seed=seed ))
       
       #Merge clusters so small it's hard to assess their seperation to the nearest cluster
       while(min(table(finalAssignments)) < max(kNum[1], 15)){
@@ -594,7 +594,6 @@ getClustAssignments <- function(pca, pcNum, clusterFun="leiden", resRange, kNum,
     clustAssignments = do.call(cbind, clustAssignments)
   }
   
-  clustAssignments = as.character(clustAssignments)
   return(clustAssignments)
 }
 
