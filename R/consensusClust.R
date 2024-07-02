@@ -487,8 +487,13 @@
       
       #At top level assess cluster relationships
       if(all(depth==1)){
-        #Compute cluster dendrogram
-        dendrogram = determineHierachy(as.matrix(jaccardDist), finalAssignments)
+        
+        if(nboots>1){
+          #Compute cluster dendrogram
+          dendrogram = determineHierachy(as.matrix(jaccardDist), finalAssignments)
+        } else {
+          dendrogram = determineHierachy(as.matrix(dist(pca)), finalAssignments)
+        }
         
         #Use clustree to visualise parent-child relationships
         clustree = str_split(finalAssignments, "_")
@@ -519,7 +524,12 @@
       clustree = NULL
     } else {
       #If not iterating just compute dendrogram and return assignments
-      dendrogram = determineHierachy(as.matrix(jaccardDist), finalAssignments)
+      if(nboots>1){
+        #Compute cluster dendrogram
+        dendrogram = determineHierachy(as.matrix(jaccardDist), finalAssignments)
+      } else {
+        dendrogram = determineHierachy(as.matrix(dist(pca)), finalAssignments)
+      }
       clustree = NULL
     }
   
@@ -551,7 +561,9 @@ getClustAssignments <- function(pca, pcNum, clusterFun="leiden", resRange, kNum,
   clustAssignments = unlist(lapply(kNum, function(k){
     lapply(resRange, function(res){
       assignments = suppressWarnings( setNames(
-        clusterRows(pca, BLUSPARAM=NNGraphParam(k=k, cluster.fun=clusterFun, cluster.args=list(resolution=res))),
+        clusterRows(pca, BLUSPARAM=SNNGraphParam(k=k, cluster.fun=clusterFun, 
+                                                 type="number",
+                                                cluster.args=list(resolution=res))),
         rownames(pca) 
       ) )
       
@@ -582,6 +594,7 @@ getClustAssignments <- function(pca, pcNum, clusterFun="leiden", resRange, kNum,
     clustAssignments = do.call(cbind, clustAssignments)
   }
   
+  clustAssignments = as.character(clustAssignments)
   return(clustAssignments)
 }
 
