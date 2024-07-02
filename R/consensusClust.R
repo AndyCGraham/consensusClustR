@@ -307,105 +307,125 @@
   #Restrict pca to chosen features if given
   pca = pca[,1:pcNum]
   
-  #Get cluster assignments for bootstrapped selections of cells
-  clustAssignments = bplapply(1:nboots, \(boot){
-    getClustAssignments( pca[sample(rownames(pca), bootSize*length(rownames(pca)), replace = TRUE),],
-                         resRange = resRange, kNum=kNum, clusterFun = clusterFun, cellOrder = rownames(pca), mode = mode, seed=seed)
-  }, BPPARAM = BPPARAM )
-  
-  ##Calculate cell-cell distance matrix based on these co-clusterings
-  #Get clustering assignments in the right format (dataframe)
-  clustAssignments = do.call(cbind, clustAssignments)
-  rownames(clustAssignments) = colnames(normCounts)
-  
-  #Remove normCounts and deviance if present
-  suppressWarnings( rm(normCounts) )
-  
-  #Alter NAs to -1, which will be ignored by the distance function
-  clustAssignments[is.na(clustAssignments)] = -1
-  
-  #Function to compute jaccard similarity between non-binary sets (ignoring -1s), implemented in C++
-  jaccardDist = cppXPtr("double customDist(const arma::mat &A, const arma::mat &B) { 
-                              float overlap, U;
-                              double jaccard;
-                              overlap = arma::accu((A == B) && (A != -1));
-                              U = arma::accu((A != -1) && (B != -1));
-                              jaccard = overlap / U;
-                              return jaccard; }",
-                                        depends = c("RcppArmadillo"))
-  
-  #Calculate distance matrix
-  jaccardDist = 1-parDist(clustAssignments, method="custom", func = jaccardDist, threads = BPPARAM$workers) 
-  
-  finalAssignments = unlist(lapply(kNum, function(k){
-    ##Adjacency graph from similarity matrix
-    knn = kNN(jaccardDist, k = k, search = "kdtree")$id
-    snnGraph = neighborsToSNNGraph(knn, type = "rank")
+  #Perform bootstrapped clustering if nboots>1
+  if(nboots>1){
     
-    ##Cluster adjacency graph at different resolutions
-    if(clusterFun=="leiden"){
-      finalAssignments = bplapply(resRange, \(res){
-        cluster_leiden(snnGraph, objective_function = "modularity", resolution_parameter = res, 
-                       beta = 0.01, n_iterations = 2)$membership 
-      }, BPPARAM = BPPARAM )
-    } else if(clusterFun=="louvain"){
-      finalAssignments = bplapply(resRange, \(res){
-        cluster_louvain(snnGraph, objective_function = "modularity", resolution_parameter = res, 
-                        beta = 0.01, n_iterations = 2)$membership 
-      }, BPPARAM = BPPARAM )
-    }
-    return(finalAssignments)
-  }), recursive = F)
-  
-  
-  #Assess silhouette score per cluster for every resolution
-  clustScores = rank(unlist(lapply(finalAssignments, \(res){
-    if(all(length(unique(res))>1, length(unique(res))<length(res)/10)){
-      silhouette = mean(approxSilhouette(pca, res)[,3], na.rm = T)
-    } else if(length(unique(res))==length(res)){
-      -1
-      } else {
-      0.15
-    }
-  })), ties.method ="last")
-  
-  #Take assignments from resolution with highest score
-  finalAssignments = finalAssignments[[which(clustScores == max(clustScores))]]
-  
-  #If more than one output cluster, lets test the robustness and statistical seperation of these clusters
-  if(length(unique(finalAssignments)) > 1){
+    #Get cluster assignments for bootstrapped selections of cells
+    clustAssignments = bplapply(1:nboots, \(boot){
+      getClustAssignments( pca[sample(rownames(pca), bootSize*length(rownames(pca)), replace = TRUE),],
+                           resRange = resRange, kNum=kNum, clusterFun = clusterFun, cellOrder = rownames(pca), mode = mode, seed=seed)
+    }, BPPARAM = BPPARAM )
     
-    #Compute cluster stability score in the bootstraps
-    compare <- function(...) pairwiseRand(..., mode="ratio", adjusted=TRUE)
-    collated = lapply(1:ncol(clustAssignments), \(boot) 
-                      compare(finalAssignments[clustAssignments[,boot] != -1], clustAssignments[,boot][clustAssignments[,boot] != -1]))
-    stabilityMat = apply(simplify2array(collated), 2, rowMeans2, na.rm = TRUE) 
-    diag(stabilityMat) = 1
-    dimnames(stabilityMat) = list(unique(finalAssignments), unique(finalAssignments))
-    stabilityMat[is.na(stabilityMat)] = 1
+    ##Calculate cell-cell distance matrix based on these co-clusterings
+    #Get clustering assignments in the right format (dataframe)
+    clustAssignments = do.call(cbind, clustAssignments)
+    rownames(clustAssignments) = colnames(normCounts)
     
-    #Merge clusters with low stablity in the bootstraps
-    while(min(stabilityMat) < minStability){
-      clustersToMerge = as.numeric(which(stabilityMat == min(stabilityMat), arr.ind = TRUE))
-      finalAssignments[finalAssignments == clustersToMerge[2]] = clustersToMerge[1]  
-      stabilityMat[clustersToMerge[1],clustersToMerge[2]] = 1
-      stabilityMat[clustersToMerge[2],clustersToMerge[1]] = 1
-    }
+    #Remove normCounts and deviance if present
+    suppressWarnings( rm(normCounts) )
     
-    #Merge clusters so small it's hard to assess their seperation to the nearest cluster
-    while(min(table(finalAssignments)) < kNum[1]){
-      clustDist = determineHierachy(as.matrix(jaccardDist), finalAssignments, return = "distance")
-      diag(clustDist) = 1
-      finalAssignments[finalAssignments == names(which.min(table(finalAssignments)))] = 
-        colnames(clustDist)[which.min(clustDist[names(which.min(table(finalAssignments))),])]                         
-    }
+    #Alter NAs to -1, which will be ignored by the distance function
+    clustAssignments[is.na(clustAssignments)] = -1
     
-    #If still more than one cluster lets test whether it's likely such strong clustering would not appear due to sampling noise
+    #Function to compute jaccard similarity between non-binary sets (ignoring -1s), implemented in C++
+    jaccardDist = cppXPtr("double customDist(const arma::mat &A, const arma::mat &B) { 
+                                float overlap, U;
+                                double jaccard;
+                                overlap = arma::accu((A == B) && (A != -1));
+                                U = arma::accu((A != -1) && (B != -1));
+                                jaccard = overlap / U;
+                                return jaccard; }",
+                                          depends = c("RcppArmadillo"))
+    
+    #Calculate distance matrix
+    jaccardDist = 1-parDist(clustAssignments, method="custom", func = jaccardDist, threads = BPPARAM$workers) 
+    
+    finalAssignments = unlist(lapply(kNum, function(k){
+      ##Adjacency graph from similarity matrix
+      knn = kNN(jaccardDist, k = k, search = "kdtree")$id
+      snnGraph = neighborsToSNNGraph(knn, type = "rank")
+      
+      ##Cluster adjacency graph at different resolutions
+      if(clusterFun=="leiden"){
+        finalAssignments = bplapply(resRange, \(res){
+          cluster_leiden(snnGraph, objective_function = "modularity", resolution_parameter = res, 
+                         beta = 0.01, n_iterations = 2)$membership 
+        }, BPPARAM = BPPARAM )
+      } else if(clusterFun=="louvain"){
+        finalAssignments = bplapply(resRange, \(res){
+          cluster_louvain(snnGraph, objective_function = "modularity", resolution_parameter = res, 
+                          beta = 0.01, n_iterations = 2)$membership 
+        }, BPPARAM = BPPARAM )
+      }
+      return(finalAssignments)
+    }), recursive = F)
+    
+    
+    #Assess silhouette score per cluster for every resolution
+    clustScores = rank(unlist(lapply(finalAssignments, \(res){
+      if(all(length(unique(res))>1, length(unique(res))<length(res)/10)){
+        silhouette = mean(approxSilhouette(pca, res)[,3], na.rm = T)
+      } else if(length(unique(res))==length(res)){
+        -1
+        } else {
+        0.15
+      }
+    })), ties.method ="last")
+    
+    #Take assignments from resolution with highest score
+    finalAssignments = finalAssignments[[which(clustScores == max(clustScores))]]
+    
+    #If more than one output cluster, lets test the robustness of these clusters in the bootstraps
     if(length(unique(finalAssignments)) > 1){
+      
+      #Compute cluster stability score in the bootstraps
+      compare <- function(...) pairwiseRand(..., mode="ratio", adjusted=TRUE)
+      collated = lapply(1:ncol(clustAssignments), \(boot) 
+                        compare(finalAssignments[clustAssignments[,boot] != -1], clustAssignments[,boot][clustAssignments[,boot] != -1]))
+      stabilityMat = apply(simplify2array(collated), 2, rowMeans2, na.rm = TRUE) 
+      diag(stabilityMat) = 1
+      dimnames(stabilityMat) = list(unique(finalAssignments), unique(finalAssignments))
+      stabilityMat[is.na(stabilityMat)] = 1
+      
+      #Merge clusters with low stablity in the bootstraps
+      while(min(stabilityMat) < minStability){
+        clustersToMerge = as.numeric(which(stabilityMat == min(stabilityMat), arr.ind = TRUE))
+        finalAssignments[finalAssignments == clustersToMerge[2]] = clustersToMerge[1]  
+        stabilityMat[clustersToMerge[1],clustersToMerge[2]] = 1
+        stabilityMat[clustersToMerge[2],clustersToMerge[1]] = 1
+      }
+      
+      #Merge clusters so small it's hard to assess their seperation to the nearest cluster
+      while(min(table(finalAssignments)) < max(kNum[1], 15)){
+        clustDist = determineHierachy(as.matrix(jaccardDist), finalAssignments, return = "distance")
+        diag(clustDist) = 1
+        finalAssignments[finalAssignments == names(which.min(table(finalAssignments)))] = 
+          colnames(clustDist)[which.min(clustDist[names(which.min(table(finalAssignments))),])]                         
+      }
+    }
+  } else {
+      #If not bootstrapping just iterate over kNums and resRange and return highest silhouette score
+      finalAssignments = getClustAssignments( pca, resRange = resRange, kNum=kNum, 
+                                              clusterFun = clusterFun, cellOrder = rownames(pca), 
+                                              mode = "robust", seed=seed )
+      
+      #Merge clusters so small it's hard to assess their seperation to the nearest cluster
+      while(min(table(finalAssignments)) < max(kNum[1], 15)){
+        clustDist = determineHierachy(as.matrix(dist(pca)), finalAssignments, return = "distance")
+        diag(clustDist) = 1
+        finalAssignments[finalAssignments == names(which.min(table(finalAssignments)))] = 
+          colnames(clustDist)[which.min(clustDist[names(which.min(table(finalAssignments))),])]                         
+      }
+    }
     
-    ##If more than one cluster, and a low silhouette score or small clusters test if these assignments are better than noise
+  
+  #If still more than one cluster lets test whether it's likely such strong clustering would not appear due to sampling noise
+  if(length(unique(finalAssignments)) > 1){
+  
+    #Clustering quality score
     silhouette = mean(approxSilhouette(pca, finalAssignments)[,3], na.rm = T)
     
+    #If below the threshold or small clusters test if this is better than chance
     if(any(silhouette <= silhouetteThresh, min(table(finalAssignments)<50))){
       
       dend = determineHierachy(as.matrix(dist(pca)), finalAssignments)
@@ -424,11 +444,8 @@
                                 regressMethod = regressMethod, resRange=resRange, scale=scale, center = center, 
                                 clusterFun = clusterFun, seed=seed, pcNum = pcNum, silhouetteThresh=silhouetteThresh)
   
-    } else {
-      #If silhouette score is below the threshold, we can save time by assuming these clusters are real - adjust threshold to avoid this 
-      #behaviour
-      pval = 0
-    }
+    } 
+    
     #If subclusters are much better than those returned by chance keep subclustering until assignments are no better than chance
     if(all(length(unique(finalAssignments)) > 1, iterate)){
       clustersToSubcluster = unique(finalAssignments)[sapply(unique(finalAssignments), \(cluster) sum(finalAssignments == cluster)) > minSize]
@@ -449,7 +466,7 @@
         sizeFactors = sizeFactors[finalAssignments == cluster]
         #Reduce some parameters for small clusters
         if(all(sum(finalAssignments == cluster) < 400, ncol(counts) >=400)){
-          kNum=sapply(kNum, \(k) as.integer(k*(2/3)))
+          kNum=unique(sapply(kNum, \(k) max(15, as.integer(k*(2/3)))))
           pcVar=min(pcVar, 0.2)
           minStability=min(min(minStability), 0.15)
         }
@@ -499,23 +516,18 @@
       message("Failed Test")
       #Else if cluster assignments are no better than chance, then don't return assignments as likely overclustered
       dendrogram = NULL
+      clustree = NULL
     } else {
       #If not iterating just compute dendrogram and return assignments
       dendrogram = determineHierachy(as.matrix(jaccardDist), finalAssignments)
       clustree = NULL
     }
-    
-    }
+  
+  } else {#{If no clusters found, return this and don't make a dendrogram or clustree
+    return(list(assignments = finalAssignments))
   }
-  
-  #If there were no real clusters found, don't make a dendrogram or clustree
-    if(length(unique(finalAssignments)) == 1) {
-      finalAssignments = rep(1, length(finalAssignments))
-      dendrogram = NULL
-      clustree = NULL
-    }
-  
-  return(list(assignments = finalAssignments, clusterDendrogram = dendrogram, clustree=clustree))
+
+return(list(assignments = finalAssignments, clusterDendrogram = dendrogram, clustree=clustree))
   
 }
 
@@ -682,7 +694,7 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula, pcNum, scale
                                      seed=seed, ...)
   
   #Remove tiny clusters which it is hard to calculate silhouette for
-  while(min(table(assignments) < kNum[1])){
+  while(min(table(assignments) < max(kNum[1], 15))){
     assignments[names(which.min(table(assignments)))] = names(which.max(table(assignments)))
   }
   
@@ -813,6 +825,17 @@ testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegr
     # significantly better connected than those geneerated if we assume the data is truly from a single population?
     fit <- fitdistr(nullDist,'normal')
     pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
+    
+    #If close to significance generate some more null statistics
+    if(all(pval >= alpha, pval < 0.1)){
+      nullDist2 = unlist(bplapply(1:30, function(i) {
+        generateNullStatistic(sce=sce, params, data, copula, kNum=kNum,
+                              varsToRegress = varsToRegress, ...)
+      }, BPPARAM = BPPARAM)) 
+      nullDist = c(nullDist, nullDist2)
+      fit <- fitdistr(nullDist,'normal')
+      pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
+    }
     
     #If failed test then merge split cluster(s) to closest cluster and test next split if there's one
     if(pval >= alpha){
