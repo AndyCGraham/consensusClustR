@@ -447,10 +447,11 @@
         } 
         colnames(newVarsToRegress) = colnames(varsToRegress)
         sizeFactors = sizeFactors[finalAssignments == cluster]
-        #Reduce kNum for small clusters
-        if(sum(finalAssignments == cluster) < 400){
-          kNum=min(min(kNum), 15)
+        #Reduce some parameters for small clusters
+        if(all(sum(finalAssignments == cluster) < 400, ncol(counts) >=400)){
+          kNum=sapply(kNum, \(k) as.integer(k*(2/3)))
           pcVar=min(pcVar, 0.2)
+          minStability=min(min(minStability), 0.15)
         }
         consensusClust(counts[,finalAssignments == cluster], pcaMethod=pcaMethod, nboots=nboots, clusterFun=clusterFun,
                        bootSize=bootSize, resRange = resRange, kNum=kNum, mode = mode, variableFeatures=NULL, 
