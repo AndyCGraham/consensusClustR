@@ -57,7 +57,7 @@
 #' @importFrom RcppXPtrUtils  cppXPtr
 #' @importFrom parallelDist parDist
 #' @importFrom SummarizedExperiment assay
-#' @importFrom SingleCellExperiment counts SingleCellExperiment
+#' @importFrom SingleCellExperiment counts SingleCellExperiment colData
 #' @importFrom MASS fitdistr
 #' @importFrom scry devianceFeatureSelection
 #' @importFrom scran getDenoisedPCs modelGeneVarByPoisson calculateSumFactors
@@ -113,7 +113,7 @@
                              sizeFactors="deconvolution", variableFeatures=NULL, nVarFeatures=2000, varsToRegress=NULL, 
                              regressMethod = "lm", skipFirstRegression=F, nboots=100, bootSize=0.9, 
                              clusterFun="leiden", resRange = c(0.01, 0.03, 0.05, 0.07, 0.10, seq.int(0.11, 1.5, length.out=10)),
-                             kNum=c(15,20,25,30), silhouetteThresh = 0.4, minSize = 50, assay="RNA", mode = "robust", 
+                             kNum=15, silhouetteThresh = 0.4, minSize = 50, assay="RNA", mode = "robust", 
                              BPPARAM=SerialParam(RNGseed = seed), seed=123, depth=1, minStability=0.25, 
                              pcVar = 0.25, ...) {
   
@@ -659,6 +659,7 @@ determineHierachy <- function(distanceMatrix, assignments, return = "dendrogram"
 #' @importFrom scDesign3 simu_new
 #' @importFrom transformGamPoi shifted_log_transform
 #' @importFrom BiocParallel SerialParam
+#' @import SingleCellExperiment colData
 #' @noRd
 #'
 generateNullStatistic <- function(sce, my_para, my_data, my_copula, pcNum, scale, 
@@ -706,8 +707,9 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula, pcNum, scale
                                      seed=seed, ...)
   
   #Remove tiny clusters which it is hard to calculate silhouette for
-  while(min(table(assignments) < max(kNum[1], 15))){
-    assignments[names(which.min(table(assignments)))] = names(which.max(table(assignments)))
+  if(min(table(assignments) < max(kNum[1], 15))){
+    #assignments[names(which.min(table(assignments)))] = names(which.max(table(assignments)))
+    return(0)
   }
   
   #Return a score of 0 if only 1 cluster
