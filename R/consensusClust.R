@@ -553,7 +553,7 @@ return(list(assignments = finalAssignments, clusterDendrogram = dendrogram, clus
 #' 
 #' @export
 #' 
-#' @importFrom bluster clusterRows NNGraphParam approxSilhouette
+#' @importFrom bluster clusterRows SNNGraphParam approxSilhouette
 #' 
 getClustAssignments <- function(pca, pcNum, clusterFun="leiden", resRange, kNum, mode = "robust", cellOrder, seed, ...) {
   

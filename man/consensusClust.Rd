@@ -23,7 +23,7 @@ consensusClust(
   bootSize = 0.9,
   clusterFun = "leiden",
   resRange = c(0.01, 0.03, 0.05, 0.07, 0.1, seq.int(0.11, 1.5, length.out = 10)),
-  kNum = 30,
+  kNum = c(15, 20, 25, 30),
   silhouetteThresh = 0.4,
   minSize = 50,
   assay = "RNA",
@@ -32,7 +32,7 @@ consensusClust(
   seed = 123,
   depth = 1,
   minStability = 0.25,
-  pcVar = 0.2,
+  pcVar = 0.25,
   ...
 )
 }
