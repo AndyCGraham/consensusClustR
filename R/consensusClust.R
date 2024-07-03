@@ -840,17 +840,6 @@ testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegr
     fit <- fitdistr(nullDist,'normal')
     pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
     
-    #If close to significance generate some more null statistics
-    if(all(pval >= alpha, pval < 0.1)){
-      nullDist2 = unlist(bplapply(1:30, function(i) {
-        generateNullStatistic(sce=sce, params, data, copula, kNum=kNum,
-                              varsToRegress = varsToRegress, ...)
-      }, BPPARAM = BPPARAM)) 
-      nullDist = c(nullDist, nullDist2)
-      fit <- fitdistr(nullDist,'normal')
-      pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
-    }
-    
     #If failed test then merge split cluster(s) to closest cluster and test next split if there's one
     if(pval >= alpha){
       while(all(pval >= alpha, split <= length(sps))){
