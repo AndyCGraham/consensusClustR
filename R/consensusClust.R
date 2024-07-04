@@ -708,8 +708,7 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula, pcNum, scale
   
   #Remove tiny clusters which it is hard to calculate silhouette for
   if(min(table(assignments) < max(kNum[1], 15))){
-    #assignments[names(which.min(table(assignments)))] = names(which.max(table(assignments)))
-    return(0)
+    assignments[names(which.min(table(assignments)))] = names(which.max(table(assignments)))
   }
   
   #Return a score of 0 if only 1 cluster
@@ -788,6 +787,7 @@ regressFeatures = function(normCounts, variablesToRegress,regressMethod, BPPARAM
   return(normCounts)
 }
 
+
 #' Generate a null count matrix from a scDesign3 paramters, process and cluster, and return the silhouette score of the clustering
 #' @importFrom bluster approxSilhouette
 #' @importFrom scDesign3 construct_data fit_marginal  fit_copula  extract_para
@@ -801,10 +801,7 @@ testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegr
   
   cccm <- cophenetic(dend)
   sps <- sort(unique(cccm), decreasing = T)
-  
-  split = 1
-  membership <- cutree(dend, h=floor(sps[split])) #Cut the tree at first splitting point
-  
+  membership <- cutree(dend, h=floor(sps[1])) #Cut the tree at first splitting point
   
   #Rename assignments to reflect only the current split
   assignments = case_match(as.character(finalAssignments), 
@@ -840,9 +837,20 @@ testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegr
     fit <- fitdistr(nullDist,'normal')
     pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
     
+    #If close to significance generate some more null statistics
+    if(all(pval >= alpha, pval < 0.1)){
+      nullDist2 = unlist(bplapply(1:30, function(i) {
+        generateNullStatistic(sce=sce, params, data, copula, kNum=kNum,
+                              varsToRegress = varsToRegress, ...)
+      }, BPPARAM = BPPARAM)) 
+      nullDist = c(nullDist, nullDist2)
+      fit <- fitdistr(nullDist,'normal')
+      pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
+    }
+    
     #If failed test then merge split cluster(s) to closest cluster and test next split if there's one
     if(pval >= alpha){
-      while(all(pval >= alpha, split <= length(sps))){
+      while(all(pval >= alpha, is.list(dend))){
         names(assignments) = finalAssignments
         clusts_to_merge = unique(names(assignments[assignments == names(which.min(table(assignments)))]))
         #Join clusters to merge into one cluster if there is multiple
@@ -852,16 +860,21 @@ testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegr
         clustDist = determineHierachy(as.matrix(dist(pca)), finalAssignments, return = "distance")
         diag(clustDist) = max(clustDist) + 1
         finalAssignments[finalAssignments %in% clusts_to_merge] = colnames(clustDist)[which.min(clustDist[rownames(clustDist) %in% clusts_to_merge,])]
-        split = split + 1
         
-        if(length(sps)>=split){ #Test another split with same null dist if there's more
-          membership <- cutree(dend, h=floor(sps[split])) #Cut the tree at lower splitting point
+        #Remove dendrogram branches involving merged clusters
+        dend = cut(dend, h=sps[1])$lower 
+        dend = dend[[which(sapply(dend, \(d) !all(labels(d) %in% clusts_to_merge)))]]
+        
+        if(is.list(dend)){ #Test another split with same null dist if there's more
+          cccm <- cophenetic(dend)
+          sps <- sort(unique(cccm), decreasing = T)
+          membership = cutree(dend, h=floor(sps[1])) #Cut the tree at lower splitting point
           #Rename assignments to reflect only the current split
           assignments = case_match(as.character(finalAssignments), 
                                    labels(membership[membership==1]) ~ "a", .default = "b") 
           
           silhouette = mean(approxSilhouette(pca, assignments)[,3], na.rm = T)
-          pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
+          pval = 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
         }
       }
       #If this merges all clusters, then return failed test
