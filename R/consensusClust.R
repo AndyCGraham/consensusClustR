@@ -839,7 +839,7 @@ testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegr
     
     #If failed test then merge split cluster(s) to closest cluster and test next split if there's one
     if(pval >= alpha){
-      while(all(pval >= alpha, is.list(dend))){
+      while(all(pval >= alpha, any(sapply(dend, \(d) is.list(d))))){
         names(assignments) = finalAssignments
         clusts_to_merge = unique(names(assignments[assignments == names(which.min(table(assignments)))]))
         #Join clusters to merge into one cluster if there is multiple
@@ -850,20 +850,22 @@ testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegr
         diag(clustDist) = max(clustDist) + 1
         finalAssignments[finalAssignments %in% clusts_to_merge] = colnames(clustDist)[which.min(clustDist[rownames(clustDist) %in% clusts_to_merge,])]
         
-        #Remove dendrogram branches involving merged clusters
-        dend = cut(dend, h=sps[1])$lower 
-        dend = dend[[which(sapply(dend, \(d) !all(labels(d) %in% clusts_to_merge)))]]
+        if(any(sapply(dend, \(d) is.list(d)))){
+          #Remove dendrogram branches involving merged clusters
+          dend = cut(dend, h=sps[1])$lower 
+          dend = dend[[which(sapply(dend, \(d) !all(labels(d) %in% clusts_to_merge)))]]
         
-        if(is.list(dend)){ #Test another split with same null dist if there's more
-          cccm <- cophenetic(dend)
-          sps <- sort(unique(cccm), decreasing = T)
-          membership = cutree(dend, h=floor(sps[1])) #Cut the tree at lower splitting point
-          #Rename assignments to reflect only the current split
-          assignments = case_match(as.character(finalAssignments), 
-                                   labels(membership[membership==1]) ~ "a", .default = "b") 
-          
-          silhouette = mean(approxSilhouette(pca, assignments)[,3], na.rm = T)
-          pval = 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
+          if(is.list(dend)){ #Test another split with same null dist if there's more
+            cccm <- cophenetic(dend)
+            sps <- sort(unique(cccm), decreasing = T)
+            membership = cutree(dend, h=floor(sps[1])) #Cut the tree at lower splitting point
+            #Rename assignments to reflect only the current split
+            assignments = case_match(as.character(finalAssignments), 
+                                     labels(membership[membership==1]) ~ "a", .default = "b") 
+            
+            silhouette = mean(approxSilhouette(pca, assignments)[,3], na.rm = T)
+            pval = 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
+          }
         }
       }
       #If this merges all clusters, then return failed test
