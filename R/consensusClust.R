@@ -113,7 +113,7 @@
                              sizeFactors="deconvolution", variableFeatures=NULL, nVarFeatures=2000, varsToRegress=NULL, 
                              regressMethod = "lm", skipFirstRegression=F, nboots=100, bootSize=0.9, 
                              clusterFun="leiden", resRange = c(0.01, 0.03, 0.05, 0.07, 0.10, seq.int(0.11, 1.5, length.out=10)),
-                             kNum=15, silhouetteThresh = 0.4, minSize = 50, assay="RNA", mode = "robust", 
+                             kNum=c(10,15,20), silhouetteThresh = 0.45, minSize = 50, assay="RNA", mode = "robust", 
                              BPPARAM=SerialParam(RNGseed = seed), seed=123, depth=1, minStability=0.25, 
                              pcVar = 0.25, ...) {
   
@@ -836,17 +836,6 @@ testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegr
     # significantly better connected than those geneerated if we assume the data is truly from a single population?
     fit <- fitdistr(nullDist,'normal')
     pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
-    
-    #If close to significance generate some more null statistics
-    if(all(pval >= alpha, pval < 0.1)){
-      nullDist2 = unlist(bplapply(1:30, function(i) {
-        generateNullStatistic(sce=sce, params, data, copula, kNum=kNum,
-                              varsToRegress = varsToRegress, ...)
-      }, BPPARAM = BPPARAM)) 
-      nullDist = c(nullDist, nullDist2)
-      fit <- fitdistr(nullDist,'normal')
-      pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
-    }
     
     #If failed test then merge split cluster(s) to closest cluster and test next split if there's one
     if(pval >= alpha){
