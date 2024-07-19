@@ -382,7 +382,13 @@
       compare <- function(...) pairwiseRand(..., mode="ratio", adjusted=TRUE)
       collated = lapply(1:ncol(clustAssignments), \(boot) 
                         compare(finalAssignments[clustAssignments[,boot] != -1], clustAssignments[,boot][clustAssignments[,boot] != -1]))
-      stabilityMat = apply(simplify2array(collated), 2, rowMeans2, na.rm = TRUE) 
+      stabilityMat = tryCatch(
+        {
+          apply(simplify2array(collated), 2, rowMeans2, na.rm = TRUE) 
+        },
+        error = function(e) {
+          matrix(rep(1, length(unique(finalAssignments))**2), nrow = length(unique(finalAssignments)))
+        } ) 
       diag(stabilityMat) = 1
       dimnames(stabilityMat) = list(unique(finalAssignments), unique(finalAssignments))
       stabilityMat[is.na(stabilityMat)] = 1
