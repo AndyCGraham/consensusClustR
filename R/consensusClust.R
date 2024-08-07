@@ -203,8 +203,8 @@
     
     #Get vars to regress if metadata column
     if(any(varsToRegress %in% colnames(colData(counts)))){
-      varNames = varsToRegress[varsToRegress %in% colData(counts)]
-      varsToRegress = colData(counts)[,colData(counts) %in% varsToRegress]
+      varNames = varsToRegress[varsToRegress %in% colnames(colData(counts))]
+      varsToRegress = as.data.frame(colData(counts)[,colnames(colData(counts)) %in% varsToRegress])
       colnames(varsToRegress) = varNames
       rm(varNames)
     }
@@ -215,8 +215,8 @@
     }
     
     #Get normalised counts if in object
-    if(!is.null(sce@assays@data$logcounts)){
-      normCounts = sce@assays@data$logcounts
+    if(!is.null(counts@assays@data$logcounts)){
+      normCounts = counts@assays@data$logcounts
     }
     
     #Get counts
@@ -271,12 +271,12 @@
         pcNum = ncol(getDenoisedPCs(normCounts, var.stats, subset.row=NULL)$components)
       } 
       #If this doesn't work well or cluster is very small, use variance explained
-      if (any(pcNum == "find", pcNum > 30)) {
+      if (any(pcNum == "find", pcNum >= 30)) {
         pca = prcomp_irlba(t(as.matrix(normCounts)), 50, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})
         pcNum = max(which(sapply(1:50, \(pcNum) sum(pca[["sdev"]][1:pcNum])/ sum(pca[["sdev"]]) ) > pcVar)[1], 5)
         pca = pca$x
         rownames(pca) = colnames(normCounts)
-      }
+      } 
     }
   } else if(pcNum == "find"){ #Else just find pcNum if desired
     #Model gene variance
@@ -284,7 +284,7 @@
       var.stats <- modelGeneVarByPoisson(counts, size.factors = sizeFactors, subset.row=variableFeaturesCounts)
       pcNum = ncol(getDenoisedPCs(normCounts, var.stats, subset.row=NULL)$components)
     }
-    if (any(pcNum == "find", pcNum > 30)) {
+    if (any(pcNum == "find", pcNum >= 30)) {
       pca = prcomp_irlba(t(as.matrix(normCounts)), 
                          50, scale = if (center) {
                            rowSds(normCounts)
@@ -301,9 +301,15 @@
                           pcVar)[1], 5)
       pca = pca$x
       rownames(pca) = colnames(normCounts)
-    }
+    } 
   }
-  
+  if(is.null(pca)){
+    pca = prcomp_irlba(t(as.matrix(normCounts)), pcNum, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})$x
+    rownames(pca) = colnames(normCounts)
+  }
+  if(all(is.na(pca))){
+    return(list(assignments = rep(1, ncol(counts))))
+  }
   #Restrict pca to chosen features if given
   pca = pca[,1:pcNum]
   
@@ -312,8 +318,14 @@
     
     #Get cluster assignments for bootstrapped selections of cells
     clustAssignments = bplapply(1:nboots, \(boot){
-      getClustAssignments( pca[sample(rownames(pca), bootSize*length(rownames(pca)), replace = TRUE),],
-                           resRange = resRange, kNum=kNum, clusterFun = clusterFun, cellOrder = rownames(pca), mode = mode, seed=seed)
+      tryCatch(
+        {
+          getClustAssignments( pca[sample(rownames(pca), bootSize*length(rownames(pca)), replace = TRUE),],
+                               resRange = resRange, kNum=kNum, clusterFun = clusterFun, cellOrder = rownames(pca), mode = mode, seed=seed)
+        },
+        error = function(e) {
+          rep(1, length(rownames(pca)))
+        } )
     }, BPPARAM = BPPARAM )
     
     ##Calculate cell-cell distance matrix based on these co-clusterings
@@ -387,18 +399,22 @@
           apply(simplify2array(collated), 2, rowMeans2, na.rm = TRUE) 
         },
         error = function(e) {
-          matrix(rep(1, length(unique(finalAssignments))**2), nrow = length(unique(finalAssignments)))
+          NULL
         } ) 
-      diag(stabilityMat) = 1
-      dimnames(stabilityMat) = list(unique(finalAssignments), unique(finalAssignments))
-      stabilityMat[is.na(stabilityMat)] = 1
-      
-      #Merge clusters with low stablity in the bootstraps
-      while(min(stabilityMat) < minStability){
-        clustersToMerge = as.numeric(which(stabilityMat == min(stabilityMat), arr.ind = TRUE))
-        finalAssignments[finalAssignments == clustersToMerge[2]] = clustersToMerge[1]  
-        stabilityMat[clustersToMerge[1],clustersToMerge[2]] = 1
-        stabilityMat[clustersToMerge[2],clustersToMerge[1]] = 1
+      if(is.null(stabilityMat)){
+        finalAssignments = rep(1, length(finalAssignments))
+      } else {
+        diag(stabilityMat) = 1
+        dimnames(stabilityMat) = list(unique(finalAssignments), unique(finalAssignments))
+        stabilityMat[is.na(stabilityMat)] = 1
+        
+        #Merge clusters with low stablity in the bootstraps
+        while(min(stabilityMat) < minStability){
+          clustersToMerge = as.numeric(which(stabilityMat == min(stabilityMat), arr.ind = TRUE))
+          finalAssignments[finalAssignments == clustersToMerge[2]] = clustersToMerge[1]  
+          stabilityMat[clustersToMerge[1],clustersToMerge[2]] = 1
+          stabilityMat[clustersToMerge[2],clustersToMerge[1]] = 1
+        }
       }
       
       #Merge clusters so small it's hard to assess their seperation to the nearest cluster
@@ -416,7 +432,7 @@
                                               mode = "robust", seed=seed ))
       
       #Merge clusters so small it's hard to assess their seperation to the nearest cluster
-      while(min(table(finalAssignments)) < max(kNum[1], 15)){
+      while(min(table(finalAssignments)) < max(kNum[1], 30)){
         clustDist = determineHierachy(as.matrix(dist(pca)), finalAssignments, return = "distance")
         diag(clustDist) = 1
         finalAssignments[finalAssignments == names(which.min(table(finalAssignments)))] = 
@@ -426,7 +442,7 @@
     
   
   #If still more than one cluster lets test whether it's likely such strong clustering would not appear due to sampling noise
-  if(length(unique(finalAssignments)) > 1){
+  if(all(length(unique(finalAssignments)) > 1)){
   
     #Clustering quality score
     silhouette = mean(approxSilhouette(pca, finalAssignments)[,3], na.rm = T)
@@ -446,14 +462,14 @@
       
       #If more than one split, test each split in order
       #Iterate/Walk the dendrogram
-      finalAssignments <- testSplits(sce, pca = pca, dend, kNum, alpha, finalAssignments, varsToRegress, BPPARAM=BPPARAM,
+      finalAssignments = testSplits(sce, pca = pca, dend, kNum, alpha, finalAssignments, varsToRegress, BPPARAM=BPPARAM,
                                 regressMethod = regressMethod, resRange=resRange, scale=scale, center = center, 
-                                clusterFun = clusterFun, seed=seed, pcNum = pcNum, silhouetteThresh=silhouetteThresh)
+                                clusterFun = clusterFun, seed=seed, pcNum = pcNum, silhouette=silhouette, silhouetteThresh=silhouetteThresh, ...)
   
     } 
     
     #If subclusters are much better than those returned by chance keep subclustering until assignments are no better than chance
-    if(all(length(unique(finalAssignments)) > 1, iterate)){
+    if(all(length(unique(finalAssignments)) > 1, iterate, any(sapply(unique(finalAssignments), \(cluster) sum(finalAssignments == cluster)) > minSize))){
       clustersToSubcluster = unique(finalAssignments)[sapply(unique(finalAssignments), \(cluster) sum(finalAssignments == cluster)) > minSize]
       clustersToSubcluster = setNames(clustersToSubcluster, clustersToSubcluster)
       #Decide whether to parallelise the runs or functions within the runs, based on how many runs are needed
@@ -467,8 +483,10 @@
         if(!is.null(varsToRegress)){
           #Subset vars to regress
           newVarsToRegress = as.data.frame(varsToRegress[finalAssignments == cluster, ])
-        } 
-        colnames(newVarsToRegress) = colnames(varsToRegress)
+          colnames(newVarsToRegress) = colnames(varsToRegress)
+        } else {
+          newVarsToRegress = NULL
+        }
         sizeFactors = sizeFactors[finalAssignments == cluster]
         #Reduce some parameters for small clusters
         if(all(sum(finalAssignments == cluster) < 400, ncol(counts) >=400)){
@@ -481,14 +499,17 @@
                        scale=scale, varsToRegress=newVarsToRegress, regressMethod=regressMethod, depth=depth+1,iterate=T, 
                        sizeFactors="deconvolution", BPPARAM=withinRunsBPPARAM, pcVar=pcVar,
                        minStability=minStability, ...)$assignments
-      }, BPPARAM=BPPARAM)
+      }, BPPARAM = BPPARAM )
       
-      #Replace errors (from pca not being able to be run in tiny clusters etc.) with lack of clustering
-      subassignments[sapply(subassignments, \(subcluster) length(subcluster) == 2)] = "1"
-      
-      #Add subcluster annotations
-      for (cluster in clustersToSubcluster[sapply(subassignments, \(subclusters) length(unique(subclusters))) > 1]){
-        finalAssignments[finalAssignments == cluster] = paste0(finalAssignments[finalAssignments == cluster], "_", subassignments[[as.character(cluster)]])
+      # Replace assignments with subassignments if required
+      if(exists("subassignments")){
+        # Replace errors (from pca not being able to be run in tiny clusters etc.) with lack of clustering
+        subassignments[sapply(subassignments, \(subcluster) length(subcluster) == 2)] = "1"
+        
+        # Add subcluster annotations
+        for (cluster in clustersToSubcluster[sapply(subassignments, \(subclusters) length(unique(subclusters))) > 1]){
+          finalAssignments[finalAssignments == cluster] = paste0(finalAssignments[finalAssignments == cluster], "_", subassignments[[as.character(cluster)]])
+        }
       }
       
       #At top level assess cluster relationships
@@ -803,18 +824,20 @@ regressFeatures = function(normCounts, variablesToRegress,regressMethod, BPPARAM
 #'
 #' 
 testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegress, 
-                       BPPARAM, silhouetteThresh, ...) {
+                       BPPARAM,silhouette, silhouetteThresh,test_splits_seperately=F, ...) {
   
-  cccm <- cophenetic(dend)
-  sps <- sort(unique(cccm), decreasing = T)
-  membership <- cutree(dend, h=floor(sps[1])) #Cut the tree at first splitting point
-  
-  #Rename assignments to reflect only the current split
-  assignments = case_match(as.character(finalAssignments), 
-                           labels(membership[membership==1]) ~ "a", .default = "b") 
-  
-  silhouette = mean(approxSilhouette(pca, assignments)[,3], na.rm = T)
-  
+  if(test_splits_seperately){
+    cccm <- cophenetic(dend)
+    sps <- sort(unique(cccm), decreasing = T)
+    membership <- cutree(dend, h=floor(sps[1])) #Cut the tree at first splitting point
+    
+    #Rename assignments to reflect only the current split
+    assignments = case_match(as.character(finalAssignments), 
+                             labels(membership[membership==1]) ~ "a", .default = "b") 
+    
+    silhouette = mean(approxSilhouette(pca, assignments)[,3], na.rm = T)
+  } 
+    
   if(silhouette <= silhouetteThresh){
     
     data <- construct_data(sce = sce, assay_use = "counts", celltype = "single", pseudotime = NULL, 
@@ -843,9 +866,13 @@ testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegr
     fit <- fitdistr(nullDist,'normal')
     pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
     
+    merge = T
     #If failed test then merge split cluster(s) to closest cluster and test next split if there's one
     if(pval >= alpha){
-      while(all(pval >= alpha, any(sapply(dend, \(d) is.list(d))))){
+      if(!test_splits_seperately){
+        return(rep(1, length(finalAssignments)))
+      }
+      while(all(pval >= alpha, merge)){
         names(assignments) = finalAssignments
         clusts_to_merge = unique(names(assignments[assignments == names(which.min(table(assignments)))]))
         #Join clusters to merge into one cluster if there is multiple
@@ -859,8 +886,8 @@ testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegr
         if(any(sapply(dend, \(d) is.list(d)))){
           #Remove dendrogram branches involving merged clusters
           dend = cut(dend, h=sps[1])$lower 
-          dend = dend[[which(sapply(dend, \(d) !all(labels(d) %in% clusts_to_merge)))]]
-        
+          dend = dend[[which(sapply(dend, \(d) !any(labels(d) %in% clusts_to_merge)))]]
+          
           if(is.list(dend)){ #Test another split with same null dist if there's more
             cccm <- cophenetic(dend)
             sps <- sort(unique(cccm), decreasing = T)
@@ -871,8 +898,12 @@ testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegr
             
             silhouette = mean(approxSilhouette(pca, assignments)[,3], na.rm = T)
             pval = 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
+          } else {
+            merge = F #Break out of loop if no more splits to test
           }
-        }
+        } else {
+          merge = F #Break out of loop if no more splits to test
+        } 
       }
       #If this merges all clusters, then return failed test
       if(length(unique(finalAssignments))==1){
@@ -881,31 +912,36 @@ testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegr
     } 
   }
   
-  #Otherwise test the next split(s) (ignoring splits containing merged clusters)
-  dend <- cut(dend, h=sps[1])$lower
-  if(all(is.list(dend[[1]]), labels(dend[[1]]) %in% finalAssignments)){
-    newVarsToRegress = as.data.frame(varsToRegress[finalAssignments %in% labels(dend[[1]]),])
-    colnames(newVarsToRegress) = colnames(varsToRegress)
-    finalAssignments[finalAssignments %in% labels(dend[[1]])] = 
-      testSplits(sce[,finalAssignments %in% labels(dend[[1]])], pca[finalAssignments %in% labels(dend[[1]]),],
-                 dend[[1]], kNum, alpha, finalAssignments[finalAssignments %in% labels(dend[[1]])],
-                 varsToRegress = newVarsToRegress, BPPARAM = BPPARAM,
-                 silhouetteThresh=silhouetteThresh, ...)
-  } else {
-    finalAssignments[finalAssignments %in% labels(dend[[1]])] = labels(dend[[1]])
+  if(test_splits_seperately){
+    #Otherwise test the next split(s) (ignoring splits containing merged clusters)
+    dend <- cut(dend, h=sps[1])$lower
+    if(exists("dend[[1]]")){
+      if(all(is.list(dend[[1]]), labels(dend[[1]]) %in% finalAssignments)){
+        newVarsToRegress = as.data.frame(varsToRegress[finalAssignments %in% labels(dend[[1]]),])
+        colnames(newVarsToRegress) = colnames(varsToRegress)
+        finalAssignments[finalAssignments %in% labels(dend[[1]])] = 
+          testSplits(sce[,finalAssignments %in% labels(dend[[1]])], pca[finalAssignments %in% labels(dend[[1]]),],
+                     dend[[1]], kNum, alpha, finalAssignments[finalAssignments %in% labels(dend[[1]])],
+                     varsToRegress = newVarsToRegress, BPPARAM = BPPARAM,
+                     silhouette=silhouette, silhouetteThresh=silhouetteThresh, ...)
+      } else {
+        finalAssignments[finalAssignments %in% labels(dend[[1]])] = labels(dend[[1]])
+      }
+      
+      if(all(is.list(dend[[2]]), labels(dend[[2]]) %in% finalAssignments)){
+        newVarsToRegress = as.data.frame(varsToRegress[finalAssignments %in% labels(dend[[2]]),])
+        colnames(newVarsToRegress) = colnames(varsToRegress)
+        finalAssignments[finalAssignments %in% labels(dend[[2]])] = 
+          testSplits(sce[,finalAssignments %in% labels(dend[[2]])], pca[finalAssignments %in% labels(dend[[2]]),], 
+                     dend[[2]], kNum, alpha, finalAssignments[finalAssignments %in% labels(dend[[2]])],
+                     varsToRegress = newVarsToRegress, BPPARAM = BPPARAM,
+                     silhouette=silhouette, silhouetteThresh=silhouetteThresh, ...)
+      } else {
+        finalAssignments[finalAssignments %in% labels(dend[[2]])] = labels(dend[[2]])
+      }
+    }
   }
-  
-  if(all(is.list(dend[[2]]), labels(dend[[2]]) %in% finalAssignments)){
-    newVarsToRegress = as.data.frame(varsToRegress[finalAssignments %in% labels(dend[[2]]),])
-    colnames(newVarsToRegress) = colnames(varsToRegress)
-    finalAssignments[finalAssignments %in% labels(dend[[2]])] = 
-      testSplits(sce[,finalAssignments %in% labels(dend[[2]])], pca[finalAssignments %in% labels(dend[[2]]),], 
-                 dend[[2]], kNum, alpha, finalAssignments[finalAssignments %in% labels(dend[[2]])],
-                 varsToRegress = newVarsToRegress, BPPARAM = BPPARAM,
-                 silhouetteThresh=silhouetteThresh, ...)
-  } else {
-    finalAssignments[finalAssignments %in% labels(dend[[2]])] = labels(dend[[2]])
-  }
+  #Return whichever clusters survived testing
   return(finalAssignments)
 }
 
