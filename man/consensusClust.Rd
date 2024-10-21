@@ -6,7 +6,9 @@
 \usage{
 consensusClust(
   counts,
+  normCounts = NULL,
   iterate = FALSE,
+  interactive = FALSE,
   alpha = 0.05,
   pca = NULL,
   pcNum = "find",
@@ -21,10 +23,11 @@ consensusClust(
   skipFirstRegression = F,
   nboots = 100,
   bootSize = 0.9,
+  test_splits_seperately = T,
   clusterFun = "leiden",
   resRange = c(0.01, 0.03, 0.05, 0.07, 0.1, seq.int(0.11, 1.5, length.out = 10)),
-  kNum = c(15, 20, 25, 30),
-  silhouetteThresh = 0.4,
+  kNum = c(10, 15, 20),
+  silhouetteThresh = 0.45,
   minSize = 50,
   assay = "RNA",
   mode = "robust",
@@ -32,6 +35,7 @@ consensusClust(
   seed = 123,
   depth = 1,
   minStability = 0.25,
+  stabilityMinSize = 100,
   pcVar = 0.25,
   ...
 )

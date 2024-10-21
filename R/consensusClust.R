@@ -2,7 +2,12 @@
 #'
 #' @param counts gene by cell matrix of scRNA-seq counts, or a Seurat or SingleCellExperiment object from which 
 #' these can be extracted.
+#' @param normCounts optional gene by cell matrix of normalised scRNA-seq counts, if inputting a matrix to counts.
 #' @param iterate Boolean specifying whether to continuously subcluster until no statistically distinct cluster are found. Default: FALSE.
+#' @param interactive Boolean specifying whether you want to choose number of PCs to consider at each iteration from an elbow plot 
+#' (doesn't work in Rmarkdown). Default: FALSE.
+#' @param pcVar If interactive=FALSE (default behaviour), then then the number of PCs to consider for clustering is chosen as the number
+#' which contains pcVar proportion of variance of the top 50 PCs, Default: 0.2.
 #' @param alpha Significance threshold for difference between silhouette scores generated from clustering real vs null data.
 #' @param pca A cell by pc pricipal component matrix. If left NULL, will be computed internally.
 #' @param pcNum number of principal components to consider when finding nearest neighbours. If left as "find", willl be determined internally.
@@ -17,7 +22,6 @@
 #' features, these will be used for the first clustering, unless variableFeatures is set to 'Find', in which case scry devianceFeatureSelection will be 
 #' used. Setting to 'None' will use all features.
 #' @param nVarFeatures Number of variable features to conduct pca on. Default is 2000.
-#' @param nboots number of boostraps to perform.
 #' @param varsToRegress Variables to regress from counts, prior to pca computation. Either a dataframe of variables, with each column being a seperate
 #' variable to regress and each row being a cell in counts, or a character vector of names of columns present in a Seurat or SingleCellExperiment 
 #' object, which is provided to counts.  
@@ -27,9 +31,13 @@
 #' @param skipFirstRegression Either a character vector specifying varsToRegress variables not to regress on the first clustering (e.g. don't regress 
 #' the effect of percent of mitochondrial genes or read depth when multiple cell types are likely present, as these factors are likely confounded with 
 #' cell type), or a boolean specifying whether to skip regression for all varsToRegress variables during the first clustering. Default: FALSE.
-#' @param bootsize Size of bootstrap samples as a proportion of original cell number. Default: 0.9.
 #' @param nboots Number of bootstrap samplings to perform, to identify robust clusters. Increasing will increase runtime, decreasing may identify less 
 #' robust clusters, or reduce ability to identify true, less distinct clusters. Default: 100.
+#' @param bootsize Size of bootstrap samples as a proportion of original cell number. Default: 0.9.
+#' @param minStability Minimum pairwise rand index between two clusters in boostrap clustering assignments (bootstrap stability). 
+#' Clusters whose pairwise rand falls below minStability  are merged. Higher minStability increases cluster merging. Calculkated
+#' via the pairwiseRand function of tttthe bluster package.
+#' @param test_splits_seperately Boolean specifying whether to test each split in each set of clusterings seperately. Default: FALSE. 
 #' @param clusterFun Which of the igraph community detection algorithms to use for clustering: "leiden" or "louvain".
 #' @param resRange Numeric vector of resolutions to cluster over. Default: c(0.01, 0.03, 0.05, 0.07, 0.10, seq.int(0.11, 1.5, length.out=10)).
 #' @param kNum number of nearest neighbours for knn graph construction.
@@ -38,10 +46,11 @@
 #' cost of increased runtime.
 #' @param minSize Minimum size of a cluster to try to subcluster. Default: 50 cells. Reduce to 0 to try subcluster everything, at the cost of
 #' increased runtime.
+#' @param assay Name of Seurat assay to extract counts from if proving a Seurat object.
 #' @param mode How to deal with cluster assignments from different resolutions, either pick the one with highest silhouette score ('robust')
 #' or use all when deciding consensus clusters ('granular').
-#' @param assay Name of Seurat assay to extract counts from if proving a Seurat object.
 #' @param BPPARAM Biocparallel paramters to run in parallel.
+#' @param seed Random seed to ensure reproducibility. Default: 123.
 #' 
 #' @return list containing:
 #' 'assignments': character vector of consensus clustering assignments;
@@ -66,6 +75,7 @@
 #' @importFrom sparseMatrixStats rowMeans2 rowSds
 #' @importFrom stringr str_split
 #' @importFrom clustree clustree
+#' @importFrom ggplot2 element_blank  ggplot  geom_point  xlab
 #' 
 #' @examples
 #' library(consensusClustR)
@@ -109,39 +119,77 @@
 #' sce = SingleCellExperiment(assays=list(counts=counts, logcounts=data)) 
 #' results = consensusClust(sce, pcNum = 5, iterate = T)
 #' 
-  consensusClust <- function(counts, iterate=FALSE, alpha=0.05, pca=NULL, pcNum="find", pcaMethod = "irlba", scale=T, center=T, 
-                             sizeFactors="deconvolution", variableFeatures=NULL, nVarFeatures=2000, varsToRegress=NULL, 
-                             regressMethod = "lm", skipFirstRegression=F, nboots=100, bootSize=0.9, 
-                             clusterFun="leiden", resRange = c(0.01, 0.03, 0.05, 0.07, 0.10, seq.int(0.11, 1.5, length.out=10)),
+  consensusClust <- function(counts, normCounts=NULL, iterate=FALSE, interactive=FALSE, pcVar = 0.2, alpha=0.05, pca=NULL, pcNum="find", 
+                             pcaMethod = "irlba", scale=T, center=T, sizeFactors="deconvolution", variableFeatures=NULL, nVarFeatures=2000, 
+                             varsToRegress=NULL, regressMethod = "lm", skipFirstRegression=F, nboots=100, bootSize=0.9, 
+                             minStability=0.175, test_splits_seperately=F, clusterFun="leiden", 
+                             resRange = c(seq.int(0.01, 0.3, length.out=10), seq.int(0.25, 1.5, length.out=10)),
                              kNum=c(10,15,20), silhouetteThresh = 0.45, minSize = 50, assay="RNA", mode = "robust", 
-                             BPPARAM=SerialParam(RNGseed = seed), seed=123, depth=1, minStability=0.25, 
-                             pcVar = 0.25, ...) {
+                             BPPARAM=SerialParam(RNGseed = seed), seed=123, depth=1, ...) {
   
   #Check inputs are correct
   stopifnot("`counts` must be a matrix, sparse matrix of type dgCMatrix, seurat object, or single-cell experiment object." = 
               class(counts)[1] %in% c("Seurat", "SingleCellExperiment", "matrix", "dgCMatrix") )
-  if(!is.null(pca)){
-    stopifnot("`pca` must be a matrix or sparse matrix of type dgCMatrix." = 
-                class(pca)[1] %in% c("matrix", "dgCMatrix") )
+  stopifnot("`normCounts` must be a matrix, sparse matrix of type dgCMatrix, or NULL." = 
+                class(normCounts)[1] %in% c("NULL", "matrix", "dgCMatrix") )
+  stopifnot("`iterate` must be TRUE or FALSE." = 
+              class(iterate)[1] %in% c("logical") )
+  stopifnot("`interactive` must be TRUE or FALSE." = 
+              class(interactive)[1] %in% c("logical") )
+  stopifnot("`nboots` must be a positive integer." = 
+              all((nboots%%1==0) & (nboots > 0) & (length(nboots)==1)) )
+  stopifnot("`pcVar` must be a float > 0 < 1." = 
+              all((pcVar > 0) & (pcVar < 1) & (length(pcVar)==1)) )
+  stopifnot("`alpha` must be a float > 0 < 1." = 
+              all((alpha > 0) & (alpha < 1) & (length(alpha)==1)) )
+  stopifnot("`pca` must be a matrix, sparse matrix of type dgCMatrix, or NULL." = 
+                class(pca)[1] %in% c("NULL", "matrix", "dgCMatrix") )
   }
   if(all(!is.null(pcNum), !pcNum == "find")){
-    stopifnot("`pcNum` must be a positive integer, smaller than cell number." = 
+    stopifnot("`pcNum` must be a positive integer, smaller than cell number, NULL, or 'find'." = 
                 all((length(pcNum)==1) & (pcNum%%1==0) & (pcNum > 0) & (pcNum < ncol(data))) )
   }
   stopifnot("`pcaMethod` must be one of 'irlba', 'svd', or 'prcomp.'" = 
                   pcaMethod %in% c("irlba", "svd", "prcomp") )
+  stopifnot("`scale` must be TRUE or FALSE." = 
+              class(scale)[1] %in% c("logical") )
+  stopifnot("`center` must be TRUE or FALSE." = 
+              class(center)[1] %in% c("logical") )
+  stopifnot("`sizeFactors` must be a numeric vector of size factors or 'deconvolution'." = 
+              any(class(sizeFactors)[1] %in% c("character") & sizeFactors[1] == "deconvolution", class(sizeFactors) == "numeric")  )
+  stopifnot("`variableFeatures` must be a character vector of names of variable features or a boolean of length nrow(counts) specifying whether 
+            each feature is a variable feature ." = 
+              any(class(variableFeatures) == "character", class(variableFeatures) == "logical")  )
+  stopifnot("`nVarFeatures` must be a positive integer." = 
+              all((nVarFeatures%%1==0) & (nVarFeatures > 0) & (length(nVarFeatures)==1)) )
+  stopifnot("`regressMethod` must be lm' or 'glmGamPoi'." = 
+              regressMethod) %in% c("glmGamPoi", "lm") )
+  stopifnot("`skipFirstRegression` must be TRUE or FALSE." = 
+              class(center)[1] %in% c("logical") )
   stopifnot("`nboots` must be a positive integer." = 
               all((nboots%%1==0) & (nboots > 0) & (length(nboots)==1)) )
+  stopifnot("`bootSize` must be a float > 0 < 1." = 
+              all((bootSize > 0) & (bootSize < 1) & (length(bootSize)==1)) )
+  stopifnot("`minStability` must be a float > 0 < 1." = 
+              all((minStability > 0) & (minStability < 1) & (length(minStability)==1)) )
+  stopifnot("`test_splits_seperately` must be a float > 0 < 1." = 
+              all((test_splits_seperately > 0) & (test_splits_seperately < 1) & (length(test_splits_seperately)==1)) )
   stopifnot("`clusterFun` must be a either leiden or louvain." = 
               clusterFun %in% c("leiden", "louvain") )
-  stopifnot("`bootSize` must be a single number." = 
-              all((length(bootSize)==1) & (is.numeric(bootSize))) )
   stopifnot("`resRange` must be a numeric vector." = 
               is.numeric(resRange) )
   stopifnot("`kNum` must be a positive integer or vector of integers." = 
               any(is.numeric(kNum), all((kNum%%1==0) & (kNum > 0))))
+  stopifnot("`silhouetteThresh` must be a float > 0 < 1." = 
+              all((silhouetteThresh > 0) & (silhouetteThresh < 1) & (length(silhouetteThresh)==1)) )
+  stopifnot("`minSize` must be a positive integer." = 
+              all((minSize%%1==0) & (minSize > 0) & (length(minSize)==1)) )
+  stopifnot("`assay` must be a single character string." = 
+              all(class(assay) == "character", length(assay) == 1)  )
   stopifnot("`mode` must be either 'robust' or 'granular'." = 
               mode %in% c("robust", "granular") )
+  stopifnot("`seed` must be a positive integer." = 
+              all((seed%%1==0) & (seed > 0) & (length(seed)==1)) )
   
   #Set random seed for sampling
   set.seed(123)
@@ -236,7 +284,7 @@
         sizeFactors <- sizeFactors/exp(mean(log(sizeFactors)))
         }
       }
-  if(!exists("normCounts")){
+  if(is.null(normCounts)){
     normCounts = shifted_log_transform(counts, size_factors = sizeFactors, pseudo_count = 1)  
     }
   
@@ -249,6 +297,9 @@
       variableFeatures = deviance >= -sort(-deviance, partial=nVarFeatures)[nVarFeatures]
       variableFeaturesCounts = variableFeatures
     }
+  }
+    
+  if(!exists("scaleData")){
     #Subset normCounts to variable features
     normCounts = normCounts[variableFeatures,]
   }
@@ -260,58 +311,79 @@
     }
   }
   if(!all(colnames(varsToRegress) %in% skipFirstRegression)){
-    #Regress out unwanted effects
-    normCounts = regressFeatures(normCounts, varsToRegress, regressMethod = regressMethod, BPPARAM = BPPARAM, seed=seed)
     
-    if(pcNum == "find"){
+    if(!exists("scaleData")){
+      #Regress out unwanted effects
+      normCounts = regressFeatures(normCounts, varsToRegress, regressMethod = regressMethod, BPPARAM = BPPARAM, seed=seed)
+    } else {
+      rm(scaleData)
+    }
+    
+    if(pcNum == "getDenoisedPCs"){
       #Estmate pcNum with getDenoisedPCs for large clusters
       if(ncol(counts) > 400){
         #Model gene variance before regression
         var.stats <- modelGeneVarByPoisson(counts, design=varsToRegress, size.factors=sizeFactors, subset.row=variableFeaturesCounts)
         pcNum = ncol(getDenoisedPCs(normCounts, var.stats, subset.row=NULL)$components)
       } 
-      #If this doesn't work well or cluster is very small, use variance explained
-      if (any(pcNum == "find", pcNum >= 30)) {
-        pca = prcomp_irlba(t(as.matrix(normCounts)), 50, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})
-        pcNum = max(which(sapply(1:50, \(pcNum) sum(pca[["sdev"]][1:pcNum])/ sum(pca[["sdev"]]) ) > pcVar)[1], 5)
-        pca = pca$x
-        rownames(pca) = colnames(normCounts)
-      } 
     }
-  } else if(pcNum == "find"){ #Else just find pcNum if desired
+  } else if(pcNum == "getDenoisedPCs"){ #Else just find pcNum if desired
     #Model gene variance
     if (ncol(counts) > 400) {
       var.stats <- modelGeneVarByPoisson(counts, size.factors = sizeFactors, subset.row=variableFeaturesCounts)
       pcNum = ncol(getDenoisedPCs(normCounts, var.stats, subset.row=NULL)$components)
     }
-    if (any(pcNum == "find", pcNum >= 30)) {
-      pca = prcomp_irlba(t(as.matrix(normCounts)), 
-                         50, scale = if (center) {
-                           rowSds(normCounts)
-                         }
-                         else {
-                           NULL
-                         }, center = if (center) {
-                           rowMeans2(normCounts)
-                         }
-                         else {
-                           NULL
-                         })
-      pcNum = max(which(sapply(1:50, function(pcNum) sum(pca[["sdev"]][1:pcNum])/sum(pca[["sdev"]])) > 
-                          pcVar)[1], 5)
+  }
+  
+  #If finding pcNum doesn't work well or cluster is very small, find the elbow of variance explained
+  if (any(pcNum == "find", pcNum > 30)) {
+    pca = prcomp_irlba(t(as.matrix(normCounts)), 50, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})
+    if(!all(is.na(pca))){
+      if(interactive){
+        elbowPlot = data.frame(stdev=pca[["sdev"]], pc=c(1:length(pca[["sdev"]])))
+        elbowPlot = ggplot(elbowPlot, aes(x=pc, y=stdev)) + geom_point() + 
+          theme(panel.grid.major = element_blank(),  panel.grid.minor = element_blank(), panel.background = element_blank()) +
+          xlab("Principal Component")
+        print(elbowPlot)
+        pcNum = readline("Choose PC Number From Elbow Plot: ")
+        pcNum= as.integer(pcNum)
+      } else {
+        #angles = sapply(4:(length(pca$sdev)-2), \(pc) atan( (mean(pca[["sdev"]][(pc-1):pc]) - mean(pca[["sdev"]][(pc+1):(pc+2)])) )  )
+        #tangents = sapply(2:length(angles), \(pc) angles[pc] / angles[pc+1]  )
+        #pcNum = which.max(tangents) + 4
+        #pcNum = max(which(sapply(1:length(angles), \(pc) angles[pc] / mean(angles[1:3])  ) 
+        #                  > 0.1)) + 2
+        #pcNum = max(pcNum, 5)
+        pcNum = max(which(sapply(1:50, \(pcNum) sum(pca[["sdev"]][1:pcNum])/ sum(pca[["sdev"]]) ) > pcVar)[1], 5)
+        
+        #pcNum = which.max(sapply(5:45, \(pcNum) ( mean(sapply((pcNum-2):pcNum, \(pc) pca[["sdev"]][pc-1] - pca[["sdev"]][pc])) - 
+        #                                            mean(sapply(pcNum:(pcNum+2), \(pc) pca[["sdev"]][pc] - pca[["sdev"]][pc-1])) ) /
+        #                           pca[["sdev"]][pcNum])) + 4
+      }
       pca = pca$x
       rownames(pca) = colnames(normCounts)
-    } 
-  }
+    }
+  } 
+  
   if(is.null(pca)){
-    pca = prcomp_irlba(t(as.matrix(normCounts)), pcNum, scale=if(center){rowSds(normCounts)}else{NULL}, center=if(center){rowMeans2(normCounts)}else{NULL})$x
-    rownames(pca) = colnames(normCounts)
+    pca = tryCatch(
+      { prcomp_irlba(t(as.matrix(normCounts)), pcNum, scale=if(center){rowSds(normCounts)}else{NULL}, 
+                     center=if(center){rowMeans2(normCounts)}else{NULL})$x
+      }, error = function(e) {
+        NA
+      }, warning=function(e){
+        NA
+      } )
   }
   if(all(is.na(pca))){
     return(list(assignments = rep(1, ncol(counts))))
   }
   #Restrict pca to chosen features if given
+  rownames(pca) = colnames(normCounts)
   pca = pca[,1:pcNum]
+  
+  #Remove normCounts if present
+  suppressWarnings( rm(normCounts) )
   
   #Perform bootstrapped clustering if nboots>1
   if(nboots>1){
@@ -320,7 +392,7 @@
     clustAssignments = bplapply(1:nboots, \(boot){
       tryCatch(
         {
-          getClustAssignments( pca[sample(rownames(pca), bootSize*length(rownames(pca)), replace = TRUE),],
+          getClustAssignments( pca[sample(rownames(pca), bootSize*nrow(pca), replace = TRUE),],
                                resRange = resRange, kNum=kNum, clusterFun = clusterFun, cellOrder = rownames(pca), mode = mode, seed=seed)
         },
         error = function(e) {
@@ -331,10 +403,7 @@
     ##Calculate cell-cell distance matrix based on these co-clusterings
     #Get clustering assignments in the right format (dataframe)
     clustAssignments = do.call(cbind, clustAssignments)
-    rownames(clustAssignments) = colnames(normCounts)
-    
-    #Remove normCounts and deviance if present
-    suppressWarnings( rm(normCounts) )
+    rownames(clustAssignments) = colnames(counts)
     
     #Alter NAs to -1, which will be ignored by the distance function
     clustAssignments[is.na(clustAssignments)] = -1
@@ -390,8 +459,18 @@
     #If more than one output cluster, lets test the robustness of these clusters in the bootstraps
     if(length(unique(finalAssignments)) > 1){
       
+      #Merge clusters so small it's hard to assess their seperation to the nearest cluster
+      while(min(table(finalAssignments)) < max(kNum[1], 20)){
+        clustDist = determineHierachy(as.matrix(jaccardDist), finalAssignments, return = "distance")
+        diag(clustDist) = 1
+        finalAssignments[finalAssignments == names(which.min(table(finalAssignments)))] = 
+          colnames(clustDist)[which.min(clustDist[names(which.min(table(finalAssignments))),])]                         
+      }
+      
       #Compute cluster stability score in the bootstraps
       compare <- function(...) pairwiseRand(..., mode="ratio", adjusted=TRUE)
+      
+      #Merge clusters with low stablity in the bootstraps
       collated = lapply(1:ncol(clustAssignments), \(boot) 
                         compare(finalAssignments[clustAssignments[,boot] != -1], clustAssignments[,boot][clustAssignments[,boot] != -1]))
       stabilityMat = tryCatch(
@@ -408,21 +487,13 @@
         dimnames(stabilityMat) = list(unique(finalAssignments), unique(finalAssignments))
         stabilityMat[is.na(stabilityMat)] = 1
         
-        #Merge clusters with low stablity in the bootstraps
         while(min(stabilityMat) < minStability){
           clustersToMerge = as.numeric(which(stabilityMat == min(stabilityMat), arr.ind = TRUE))
           finalAssignments[finalAssignments == clustersToMerge[2]] = clustersToMerge[1]  
-          stabilityMat[clustersToMerge[1],clustersToMerge[2]] = 1
-          stabilityMat[clustersToMerge[2],clustersToMerge[1]] = 1
+          clustAssignments[clustAssignments == clustersToMerge[2]] = clustersToMerge[1] 
+          stabilityMat[clustersToMerge[1], clustersToMerge[2]] = 1
+          stabilityMat[clustersToMerge[2], clustersToMerge[1]] = 1
         }
-      }
-      
-      #Merge clusters so small it's hard to assess their seperation to the nearest cluster
-      while(min(table(finalAssignments)) < max(kNum[1], 15)){
-        clustDist = determineHierachy(as.matrix(jaccardDist), finalAssignments, return = "distance")
-        diag(clustDist) = 1
-        finalAssignments[finalAssignments == names(which.min(table(finalAssignments)))] = 
-          colnames(clustDist)[which.min(clustDist[names(which.min(table(finalAssignments))),])]                         
       }
     }
   } else {
@@ -463,8 +534,8 @@
       #If more than one split, test each split in order
       #Iterate/Walk the dendrogram
       finalAssignments = testSplits(sce, pca = pca, dend, kNum, alpha, finalAssignments, varsToRegress, BPPARAM=BPPARAM,
-                                regressMethod = regressMethod, resRange=resRange, scale=scale, center = center, 
-                                clusterFun = clusterFun, seed=seed, pcNum = pcNum, silhouette=silhouette, silhouetteThresh=silhouetteThresh, ...)
+                                regressMethod = regressMethod, scale=scale, center = center, test_sep=test_splits_seperately,
+                                clusterFun = clusterFun, seed=seed, pcNum = pcNum, silhouette=silhouette, silhouetteThresh=silhouetteThresh)
   
     } 
     
@@ -472,14 +543,8 @@
     if(all(length(unique(finalAssignments)) > 1, iterate, any(sapply(unique(finalAssignments), \(cluster) sum(finalAssignments == cluster)) > minSize))){
       clustersToSubcluster = unique(finalAssignments)[sapply(unique(finalAssignments), \(cluster) sum(finalAssignments == cluster)) > minSize]
       clustersToSubcluster = setNames(clustersToSubcluster, clustersToSubcluster)
-      #Decide whether to parallelise the runs or functions within the runs, based on how many runs are needed
-      if(length(unique(finalAssignments)) >= BPPARAM$workers){
-        withinRunsBPPARAM = SerialParam(RNGseed = seed)
-      } else {
-        withinRunsBPPARAM = BPPARAM
-        BPPARAM = SerialParam(RNGseed = seed)
-      }
-      subassignments = bplapply(clustersToSubcluster, function(cluster){
+      
+      subassignments = lapply(clustersToSubcluster, function(cluster){
         if(!is.null(varsToRegress)){
           #Subset vars to regress
           newVarsToRegress = as.data.frame(varsToRegress[finalAssignments == cluster, ])
@@ -487,19 +552,20 @@
         } else {
           newVarsToRegress = NULL
         }
-        sizeFactors = sizeFactors[finalAssignments == cluster]
         #Reduce some parameters for small clusters
-        if(all(sum(finalAssignments == cluster) < 400, ncol(counts) >=400)){
-          kNum=unique(sapply(kNum, \(k) max(15, as.integer(k*(2/3)))))
-          pcVar=min(pcVar, 0.2)
-          minStability=min(min(minStability), 0.15)
-        }
-        consensusClust(counts[,finalAssignments == cluster], pcaMethod=pcaMethod, nboots=nboots, clusterFun=clusterFun,
-                       bootSize=bootSize, resRange = resRange, kNum=kNum, mode = mode, variableFeatures=NULL, 
-                       scale=scale, varsToRegress=newVarsToRegress, regressMethod=regressMethod, depth=depth+1,iterate=T, 
-                       sizeFactors="deconvolution", BPPARAM=withinRunsBPPARAM, pcVar=pcVar,
-                       minStability=minStability, ...)$assignments
-      }, BPPARAM = BPPARAM )
+        # if(all(sum(finalAssignments == cluster) < 500, ncol(counts) >= 500)){
+        #   kNum = kNum[kNum <= 15]
+        #   if(length(kNum)<1){
+        #     kNum=c(10,15)
+        #   }
+        #   pcVar = min(0.2, pcVar)
+        # }
+        consensusClust(counts[,finalAssignments == cluster], pcaMethod=pcaMethod, 
+                       nboots=nboots, clusterFun=clusterFun, bootSize=bootSize, resRange = resRange, kNum=kNum, mode = mode, 
+                       variableFeatures=NULL, scale=scale, varsToRegress=newVarsToRegress, regressMethod=regressMethod, depth=depth+1,
+                       iterate=T, interactive=interactive, BPPARAM=BPPARAM, pcVar=pcVar,
+                       minStability=minStability, test_splits_seperately=test_splits_seperately, ...)$assignments
+      })
       
       # Replace assignments with subassignments if required
       if(exists("subassignments")){
@@ -582,7 +648,7 @@ return(list(assignments = finalAssignments, clusterDendrogram = dendrogram, clus
 #' 
 #' @importFrom bluster clusterRows SNNGraphParam approxSilhouette
 #' 
-getClustAssignments <- function(pca, pcNum, clusterFun="leiden", resRange, kNum, mode = "robust", cellOrder, seed, ...) {
+getClustAssignments <- function(pca, clusterFun="leiden", resRange, kNum, mode = "robust", cellOrder, seed, minSize=0, ...) {
   
   #Cluster adjacency matrix, returning assignments named by cell name
   clustAssignments = unlist(lapply(kNum, function(k){
@@ -595,8 +661,10 @@ getClustAssignments <- function(pca, pcNum, clusterFun="leiden", resRange, kNum,
       ) )
       
       if(mode == "robust"){
-        if(length(unique(assignments))>1){
+        if(all(length(unique(assignments))>1, min(table(assignments)) > minSize)){
           clustScore = mean(approxSilhouette(pca, assignments)[,3], na.rm = T)
+        } else if(min(table(assignments)) > minSize) {
+          clustScore = 0
         } else {
           clustScore = 0.15
         }
@@ -686,7 +754,7 @@ determineHierachy <- function(distanceMatrix, assignments, return = "dendrogram"
 #' @importFrom scDesign3 simu_new
 #' @importFrom transformGamPoi shifted_log_transform
 #' @importFrom BiocParallel SerialParam
-#' @import SingleCellExperiment colData
+#' @importFrom SingleCellExperiment colData
 #' @noRd
 #'
 generateNullStatistic <- function(sce, my_para, my_data, my_copula, pcNum, scale, 
@@ -711,9 +779,11 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula, pcNum, scale
     )
   null = shifted_log_transform(null, size_factors = "deconvolution", pseudo_count = 1)
   if(!is.null(varsToRegress)){
-    varsToRegress[1:nrow(varsToRegress), 1:ncol(varsToRegress)] = as.data.frame(colData(sce)[,colnames(colData(sce)) %in% colnames(varsToRegress)])[1:nrow(varsToRegress), 1:ncol(varsToRegress)] 
-    null = regressFeatures(null, regressMethod="lm", BPPARAM = SerialParam(RNGseed = seed), 
+    varsToRegress[1:nrow(varsToRegress), 1:ncol(varsToRegress)] = as.data.frame(colData(sce)[,colnames(colData(sce)) %in% colnames(varsToRegress)])[1:nrow(varsToRegress), 1:ncol(varsToRegress)]
+    null = regressFeatures(null, regressMethod="lm", BPPARAM = SerialParam(RNGseed = seed),
                            seed=seed,variablesToRegress = varsToRegress)
+  } else {
+    null = as.matrix(null)
   }
   
   pcaNull = tryCatch(
@@ -730,13 +800,9 @@ generateNullStatistic <- function(sce, my_para, my_data, my_copula, pcNum, scale
   
   rownames(pcaNull) = colnames(null)
   
-  assignments = getClustAssignments( pcaNull, cellOrder = rownames(pcaNull),kNum=kNum,
-                                     seed=seed, ...)
-  
-  #Remove tiny clusters which it is hard to calculate silhouette for
-  if(min(table(assignments) < max(kNum[1], 15))){
-    assignments[names(which.min(table(assignments)))] = names(which.max(table(assignments)))
-  }
+  assignments = as.character(getClustAssignments( pcaNull, cellOrder = rownames(pcaNull),kNum=kNum,
+                                     seed=seed, resRange = c(seq(0.01, 0.3, 0.03), seq(0.3, 2, 0.2)),
+                                     minSize = 5, ...))
   
   #Return a score of 0 if only 1 cluster
   if(length(unique(assignments))< 2){
@@ -824,19 +890,20 @@ regressFeatures = function(normCounts, variablesToRegress,regressMethod, BPPARAM
 #'
 #' 
 testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegress, 
-                       BPPARAM,silhouette, silhouetteThresh,test_splits_seperately=F, ...) {
+                       BPPARAM,silhouette, silhouetteThresh,test_sep=F, resRange=seq(0.1, 3.4, 0.15), ...) {
   
-  if(test_splits_seperately){
+  if(test_sep){
     cccm <- cophenetic(dend)
     sps <- sort(unique(cccm), decreasing = T)
-    membership <- cutree(dend, h=floor(sps[1])) #Cut the tree at first splitting point
+    membership <- cutree(dend, h=floor(sps[max(1, which(sps > max(sps)*(8.5/10)))])) #Cut the tree at first splitting point
     
     #Rename assignments to reflect only the current split
-    assignments = case_match(as.character(finalAssignments), 
-                             labels(membership[membership==1]) ~ "a", .default = "b") 
+    assignments = membership[as.character(finalAssignments)] 
     
     silhouette = mean(approxSilhouette(pca, assignments)[,3], na.rm = T)
-  } 
+  } else {
+    assignments = finalAssignments
+  }
     
   if(silhouette <= silhouetteThresh){
     
@@ -856,91 +923,116 @@ testSplits <- function(sce, pca, dend, kNum, alpha, finalAssignments, varsToRegr
     
     # Generate null distribution for Silhouette score based on simulating a new dataset based on these single population paramters, 
     # clustering, and calculating the silhouette score.
-    nullDist = unlist(bplapply(1:20, function(i) {
-      generateNullStatistic(sce=sce, params, data, copula, kNum=kNum,
-                            varsToRegress = varsToRegress, ...)
-    }, BPPARAM = BPPARAM)) 
-    
+    # nullDist = tryCatch( {
+    #                       unlist(bplapply(1:20, function(i) {
+    #                         generateNullStatistic(sce=sce, params, data, copula, kNum=kNum,
+    #                                               varsToRegress = varsToRegress, ...)
+    #                       }, BPPARAM = BPPARAM)) 
+    # }, error = function(e) {
+    #   c(1,1,1,1,1)
+    # } )
+    nullDist =  unlist(bplapply(1:20, function(i) {
+                              generateNullStatistic(sce=sce, params, data, copula, kNum=kNum,
+                                                    varsToRegress = varsToRegress, ...)
+                            }, BPPARAM = BPPARAM))
     # Test the statistical signifcance of the difference in silhouette scores between the NULL and real clusterings - are your clusters
     # significantly better connected than those geneerated if we assume the data is truly from a single population?
     fit <- fitdistr(nullDist,'normal')
     pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
     
-    merge = T
+    #Test more null samples if significance not clear
+    if(all(pval < 0.1, pval >= 0.05)){
+      BPPARAM$RNGseed = BPPARAM$RNGseed + 1 #Change RNGseed to get different results
+      nullDist2 =  unlist(bplapply(1:20, function(i) {
+        generateNullStatistic(sce=sce, params, data, copula, kNum=kNum,
+                              varsToRegress = varsToRegress, ...)
+      }, BPPARAM = BPPARAM))
+      nullDist = c(nullDist, nullDist2)
+      fit <- fitdistr(nullDist,'normal')
+      pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
+    }
+    
+    #And Again
+    if(all(pval < 0.075, pval >= 0.05)){
+      BPPARAM$RNGseed = BPPARAM$RNGseed + 1 #Change RNGseed to get different results
+      nullDist2 =  unlist(bplapply(1:20, function(i) {
+        generateNullStatistic(sce=sce, params, data, copula, kNum=kNum,
+                              varsToRegress = varsToRegress, ...)
+      }, BPPARAM = BPPARAM))
+      nullDist = c(nullDist, nullDist2)
+      fit <- fitdistr(nullDist,'normal')
+      pval <- 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
+    }
+    
     #If failed test then merge split cluster(s) to closest cluster and test next split if there's one
     if(pval >= alpha){
-      if(!test_splits_seperately){
+      if(!test_sep){ #If we're testing multiple clusterings and it fails, reject all
         return(rep(1, length(finalAssignments)))
       }
-      while(all(pval >= alpha, merge)){
+      while(all(pval >= alpha, length(unique(finalAssignments))>1)){
         names(assignments) = finalAssignments
-        clusts_to_merge = unique(names(assignments[assignments == names(which.min(table(assignments)))]))
+        clusts_to_merge = sapply(unique(assignments), \(cluster) 
+                                  names(membership[membership==cluster])[which.max(table(finalAssignments[finalAssignments %in% names(membership[membership==cluster])]))]
+                                 )
         #Join clusters to merge into one cluster if there is multiple
-        if(length(clusts_to_merge) > 1){
-          finalAssignments[finalAssignments %in% clusts_to_merge] = names(which.max(table(finalAssignments[finalAssignments %in% clusts_to_merge])))
-        }
-        clustDist = determineHierachy(as.matrix(dist(pca)), finalAssignments, return = "distance")
-        diag(clustDist) = max(clustDist) + 1
-        finalAssignments[finalAssignments %in% clusts_to_merge] = colnames(clustDist)[which.min(clustDist[rownames(clustDist) %in% clusts_to_merge,])]
+        finalAssignments[finalAssignments %in% clusts_to_merge] = clusts_to_merge[1]
         
-        if(any(sapply(dend, \(d) is.list(d)))){
-          #Remove dendrogram branches involving merged clusters
-          dend = cut(dend, h=sps[1])$lower 
-          dend = dend[[which(sapply(dend, \(d) !any(labels(d) %in% clusts_to_merge)))]]
+        #Keep testing lower splits if present
+        if(length(unique(finalAssignments))>1){
+          #Make new dend withput merged clusters
+          dend = determineHierachy(as.matrix(dist(pca)), finalAssignments)
+          cccm <- cophenetic(dend)
+          sps <- sort(unique(cccm), decreasing = T)
+          membership <- cutree(dend, h=floor(sps[max(1, which(sps > max(sps)*(8.5/10)))])) #Cut the tree at first splitting point
           
-          if(is.list(dend)){ #Test another split with same null dist if there's more
-            cccm <- cophenetic(dend)
-            sps <- sort(unique(cccm), decreasing = T)
-            membership = cutree(dend, h=floor(sps[1])) #Cut the tree at lower splitting point
-            #Rename assignments to reflect only the current split
-            assignments = case_match(as.character(finalAssignments), 
-                                     labels(membership[membership==1]) ~ "a", .default = "b") 
-            
-            silhouette = mean(approxSilhouette(pca, assignments)[,3], na.rm = T)
-            pval = 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
-          } else {
-            merge = F #Break out of loop if no more splits to test
-          }
-        } else {
-          merge = F #Break out of loop if no more splits to test
+          #Rename assignments to reflect only the current split
+          assignments = membership[as.character(finalAssignments)] 
+          
+          silhouette = mean(approxSilhouette(pca, assignments)[,3], na.rm = T)
+          
+          pval = 1-pnorm(silhouette,mean=fit$estimate[1],sd=fit$estimate[2])
         } 
-      }
+      } 
+      
       #If this merges all clusters, then return failed test
       if(length(unique(finalAssignments))==1){
         return(finalAssignments)
-      }  
+      }
     } 
   }
   
-  if(test_splits_seperately){
+  if(test_sep){
     #Otherwise test the next split(s) (ignoring splits containing merged clusters)
-    dend <- cut(dend, h=sps[1])$lower
-    if(exists("dend[[1]]")){
-      if(all(is.list(dend[[1]]), labels(dend[[1]]) %in% finalAssignments)){
-        newVarsToRegress = as.data.frame(varsToRegress[finalAssignments %in% labels(dend[[1]]),])
-        colnames(newVarsToRegress) = colnames(varsToRegress)
-        finalAssignments[finalAssignments %in% labels(dend[[1]])] = 
-          testSplits(sce[,finalAssignments %in% labels(dend[[1]])], pca[finalAssignments %in% labels(dend[[1]]),],
-                     dend[[1]], kNum, alpha, finalAssignments[finalAssignments %in% labels(dend[[1]])],
-                     varsToRegress = newVarsToRegress, BPPARAM = BPPARAM,
+    dend <- cut(dend, h=floor(sps[max(1, which(sps > max(sps)*(8.5/10)))]))$lower
+    if(any(sapply(dend, \(split) is.list(split)))){
+      lowerAssignments = lapply(dend, \(lowerSplit){
+        if(all(is.list(lowerSplit), labels(lowerSplit) %in% finalAssignments)){
+          
+          if(!is.null(varsToRegress)){
+            newVarsToRegress = as.data.frame(varsToRegress[finalAssignments %in% labels(lowerSplit),])
+            colnames(newVarsToRegress) = colnames(varsToRegress)
+          } else {
+            newVarsToRegress = NULL
+          }
+        
+          testSplits(sce[,finalAssignments %in% labels(lowerSplit)], pca[finalAssignments %in% labels(lowerSplit),],
+                     lowerSplit, kNum, alpha, finalAssignments[finalAssignments %in% labels(lowerSplit)],
+                     varsToRegress = newVarsToRegress, BPPARAM = BPPARAM, test_sep=test_sep,
                      silhouette=silhouette, silhouetteThresh=silhouetteThresh, ...)
-      } else {
-        finalAssignments[finalAssignments %in% labels(dend[[1]])] = labels(dend[[1]])
-      }
+        } else {
+          NA
+        }
+      })
       
-      if(all(is.list(dend[[2]]), labels(dend[[2]]) %in% finalAssignments)){
-        newVarsToRegress = as.data.frame(varsToRegress[finalAssignments %in% labels(dend[[2]]),])
-        colnames(newVarsToRegress) = colnames(varsToRegress)
-        finalAssignments[finalAssignments %in% labels(dend[[2]])] = 
-          testSplits(sce[,finalAssignments %in% labels(dend[[2]])], pca[finalAssignments %in% labels(dend[[2]]),], 
-                     dend[[2]], kNum, alpha, finalAssignments[finalAssignments %in% labels(dend[[2]])],
-                     varsToRegress = newVarsToRegress, BPPARAM = BPPARAM,
-                     silhouette=silhouette, silhouetteThresh=silhouetteThresh, ...)
-      } else {
-        finalAssignments[finalAssignments %in% labels(dend[[2]])] = labels(dend[[2]])
+      #Replace clusters in finalAssignments with results from testing any lower splits
+      for(split in 1:length(lowerAssignments)){
+        if(!is.na(lowerAssignments[[split]][[1]])){
+            finalAssignments[finalAssignments %in% labels(dend[[split]])] = lowerAssignments[[split]]
+          }
       }
     }
-  }
+    
+  } 
   #Return whichever clusters survived testing
   return(finalAssignments)
 }

@@ -13,7 +13,9 @@ testSplits(
   finalAssignments,
   varsToRegress,
   BPPARAM,
+  silhouette,
   silhouetteThresh,
+  test_sep = F,
   ...
 )
 }
