@@ -144,7 +144,6 @@
               all((alpha > 0) & (alpha < 1) & (length(alpha)==1)) )
   stopifnot("`pca` must be a matrix, sparse matrix of type dgCMatrix, or NULL." = 
                 class(pca)[1] %in% c("NULL", "matrix", "dgCMatrix") )
-  }
   if(all(!is.null(pcNum), !pcNum == "find")){
     stopifnot("`pcNum` must be a positive integer, smaller than cell number, NULL, or 'find'." = 
                 all((length(pcNum)==1) & (pcNum%%1==0) & (pcNum > 0) & (pcNum < ncol(data))) )
@@ -162,8 +161,8 @@
               any(class(variableFeatures) == "character", class(variableFeatures) == "logical")  )
   stopifnot("`nVarFeatures` must be a positive integer." = 
               all((nVarFeatures%%1==0) & (nVarFeatures > 0) & (length(nVarFeatures)==1)) )
-  stopifnot("`regressMethod` must be lm' or 'glmGamPoi'." = 
-              regressMethod) %in% c("glmGamPoi", "lm") )
+  stopifnot("`regressMethod` must be 'lm' or 'glmGamPoi'." = 
+              regressMethod %in% c("glmGamPoi", "lm") )
   stopifnot("`skipFirstRegression` must be TRUE or FALSE." = 
               class(center)[1] %in% c("logical") )
   stopifnot("`nboots` must be a positive integer." = 

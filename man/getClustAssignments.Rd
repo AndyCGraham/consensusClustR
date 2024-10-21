@@ -12,6 +12,7 @@ getClustAssignments(
   mode = "robust",
   cellOrder,
   seed,
+  minSize = 0,
   ...
 )
 }

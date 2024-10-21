@@ -16,6 +16,7 @@ testSplits(
   silhouette,
   silhouetteThresh,
   test_sep = F,
+  resRange = seq(0.1, 3.4, 0.15),
   ...
 )
 }

@@ -9,6 +9,7 @@ consensusClust(
   normCounts = NULL,
   iterate = FALSE,
   interactive = FALSE,
+  pcVar = 0.2,
   alpha = 0.05,
   pca = NULL,
   pcNum = "find",
@@ -23,9 +24,10 @@ consensusClust(
   skipFirstRegression = F,
   nboots = 100,
   bootSize = 0.9,
-  test_splits_seperately = T,
+  minStability = 0.175,
+  test_splits_seperately = F,
   clusterFun = "leiden",
-  resRange = c(0.01, 0.03, 0.05, 0.07, 0.1, seq.int(0.11, 1.5, length.out = 10)),
+  resRange = c(seq.int(0.01, 0.3, length.out = 10), seq.int(0.25, 1.5, length.out = 10)),
   kNum = c(10, 15, 20),
   silhouetteThresh = 0.45,
   minSize = 50,
@@ -34,9 +36,6 @@ consensusClust(
   BPPARAM = SerialParam(RNGseed = seed),
   seed = 123,
   depth = 1,
-  minStability = 0.25,
-  stabilityMinSize = 100,
-  pcVar = 0.25,
   ...
 )
 }
@@ -44,7 +43,15 @@ consensusClust(
 \item{counts}{gene by cell matrix of scRNA-seq counts, or a Seurat or SingleCellExperiment object from which
 these can be extracted.}
 
+\item{normCounts}{optional gene by cell matrix of normalised scRNA-seq counts, if inputting a matrix to counts.}
+
 \item{iterate}{Boolean specifying whether to continuously subcluster until no statistically distinct cluster are found. Default: FALSE.}
+
+\item{interactive}{Boolean specifying whether you want to choose number of PCs to consider at each iteration from an elbow plot
+(doesn't work in Rmarkdown). Default: FALSE.}
+
+\item{pcVar}{If interactive=FALSE (default behaviour), then then the number of PCs to consider for clustering is chosen as the number
+which contains pcVar proportion of variance of the top 50 PCs, Default: 0.2.}
 
 \item{alpha}{Significance threshold for difference between silhouette scores generated from clustering real vs null data.}
 
@@ -84,6 +91,12 @@ cell type), or a boolean specifying whether to skip regression for all varsToReg
 \item{nboots}{Number of bootstrap samplings to perform, to identify robust clusters. Increasing will increase runtime, decreasing may identify less
 robust clusters, or reduce ability to identify true, less distinct clusters. Default: 100.}
 
+\item{minStability}{Minimum pairwise rand index between two clusters in boostrap clustering assignments (bootstrap stability).
+Clusters whose pairwise rand falls below minStability  are merged. Higher minStability increases cluster merging. Calculkated
+via the pairwiseRand function of tttthe bluster package.}
+
+\item{test_splits_seperately}{Boolean specifying whether to test each split in each set of clusterings seperately. Default: FALSE.}
+
 \item{clusterFun}{Which of the igraph community detection algorithms to use for clustering: "leiden" or "louvain".}
 
 \item{resRange}{Numeric vector of resolutions to cluster over. Default: c(0.01, 0.03, 0.05, 0.07, 0.10, seq.int(0.11, 1.5, length.out=10)).}
@@ -103,6 +116,8 @@ increased runtime.}
 or use all when deciding consensus clusters ('granular').}
 
 \item{BPPARAM}{Biocparallel paramters to run in parallel.}
+
+\item{seed}{Random seed to ensure reproducibility. Default: 123.}
 
 \item{bootsize}{Size of bootstrap samples as a proportion of original cell number. Default: 0.9.}
 }
