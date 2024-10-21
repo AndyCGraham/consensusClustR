@@ -171,8 +171,8 @@
               all((bootSize > 0) & (bootSize < 1) & (length(bootSize)==1)) )
   stopifnot("`minStability` must be a float > 0 < 1." = 
               all((minStability > 0) & (minStability < 1) & (length(minStability)==1)) )
-  stopifnot("`test_splits_seperately` must be a float > 0 < 1." = 
-              all((test_splits_seperately > 0) & (test_splits_seperately < 1) & (length(test_splits_seperately)==1)) )
+  stopifnot("`test_splits_seperately` must be TRUE or FALSE." = 
+              class(test_splits_seperately)[1] %in% c("logical") )
   stopifnot("`clusterFun` must be a either leiden or louvain." = 
               clusterFun %in% c("leiden", "louvain") )
   stopifnot("`resRange` must be a numeric vector." = 
