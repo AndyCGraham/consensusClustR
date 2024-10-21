@@ -157,8 +157,8 @@
   stopifnot("`sizeFactors` must be a numeric vector of size factors or 'deconvolution'." = 
               any(class(sizeFactors)[1] %in% c("character") & sizeFactors[1] == "deconvolution", class(sizeFactors) == "numeric")  )
   stopifnot("`variableFeatures` must be a character vector of names of variable features or a boolean of length nrow(counts) specifying whether 
-            each feature is a variable feature ." = 
-              any(class(variableFeatures) == "character", class(variableFeatures) == "logical")  )
+            each feature is a variable feature, or NULL ." = 
+              any(class(variableFeatures) == "character", class(variableFeatures) == "logical"), is.null(variableFeatures)  )
   stopifnot("`nVarFeatures` must be a positive integer." = 
               all((nVarFeatures%%1==0) & (nVarFeatures > 0) & (length(nVarFeatures)==1)) )
   stopifnot("`regressMethod` must be 'lm' or 'glmGamPoi'." = 
